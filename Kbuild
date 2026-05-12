@@ -7,6 +7,6 @@ ccflags-y := 	-Wall					\
 		-Werror=format-security			\
 		-Werror=implicit-function-declaration
 
-obj-m := hworld.o
+obj-m := ramdisk.o
 
-hworld-y := src/main.o
+ramdisk-y := src/main.o
