@@ -5,7 +5,6 @@
 #include <linux/blkdev.h>
 
 static const char *ramdisk_name = "foxramdisk"; // ramdisk is occupied
-static unsigned int ramdisk_major;
 
 static struct block_device_operations ramdisk_ops;
 
@@ -81,24 +80,14 @@ static void ramdisk_delete(struct ramdisk_dev *dev) {
 static void cleanup(void) {
 	ramdisk_delete(&dev_a);
 	ramdisk_delete(&dev_b);
-	unregister_blkdev(ramdisk_major, ramdisk_name);
 }
 
 static int __init ramdisk_init(void) {
-	pr_err("HERE INIT 0\n");
-
 	memset(&ramdisk_ops, 0, sizeof(ramdisk_ops));
 	ramdisk_ops.submit_bio = ramdisk_submit_bio;
 	ramdisk_ops.owner = THIS_MODULE;
 
-	pr_err("HERE INIT 1\n");
-
-	int return_code = register_blkdev(0, ramdisk_name);
-	if (return_code <= 0) {
-		pr_err("Error allocating major number!\n");
-		goto major_allocation_error;
-	}
-	ramdisk_major = (unsigned int)return_code;
+	int return_code;
 
 	dev_a.initialized = false;
 	dev_b.initialized = false;
@@ -114,12 +103,11 @@ static int __init ramdisk_init(void) {
 		goto disk_add_error;
 	}
 
-	pr_err("HERE INIT 2\n");
-
 	return 0;
 
-	disk_add_error: cleanup();
-	major_allocation_error: return return_code;
+disk_add_error: 
+	cleanup();
+	return return_code;
 }
 
 static void __exit ramdisk_exit(void) {
