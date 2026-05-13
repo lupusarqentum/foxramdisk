@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-#include "linux/bio.h"
+#include <linux/bio.h>
 #include <linux/module.h>
 #include <linux/blkdev.h>
 
@@ -18,20 +18,24 @@ static struct ramdisk_dev dev_b;
 static const sector_t capacity_a = 21;
 static const sector_t capacity_b = 8*1024*1024*2;
 
-const char running_line[] = "Университетская Старый Петергоф Новый Петергоф Михайловская Дача Стрельна Сергиево Сосновая Поляна Лигово Ульянка Дачное Ленинский Проспект Броневая Электродепо Балтийский вокзал";
+static const char running_line[] = "Университетская Старый Петергоф Новый Петергоф Михайловская Дача Стрельна Сергиево Сосновая Поляна Лигово Ульянка Дачное Ленинский Проспект Броневая Электродепо Балтийский вокзал";
 
-static void ramdisk_submit_bio(struct bio *bio) {
+static void ramdisk_submit_bio(struct bio *bio)
+{
 	//struct ramdisk_dev *disk = bio->bi_bdev->bd_disk->private_data;
 	if (bio_op(bio) == REQ_OP_READ) {
 		struct bio_vec bvl;
 		struct bvec_iter iter;
+
 		bio_for_each_segment(bvl, bio, iter) {
 			struct page *page = bvl.bv_page;
 			unsigned int offset = bvl.bv_offset;
 			unsigned int len = bvl.bv_len;
 			char *mem = kmap_local_page(page);
+			int pos;
+
 			for (unsigned int i = 0; i < len; ++i) {
-				int pos = iter.bi_sector * 512 + i;
+				pos = iter.bi_sector * 512 + i;
 				mem[offset + i] = running_line[pos % (sizeof(running_line) - 1)];
 			}
 			kunmap_local(mem);
@@ -42,8 +46,10 @@ static void ramdisk_submit_bio(struct bio *bio) {
 	}
 }
 
-static int ramdisk_add(struct ramdisk_dev *dev, int number, sector_t cap) {
+static int ramdisk_add(struct ramdisk_dev *dev, int number, sector_t cap)
+{
 	int return_code;
+
 	memset(dev, 0, sizeof(dev));
 	dev->gd = blk_alloc_disk(NULL, NUMA_NO_NODE);
 	if (IS_ERR(dev->gd)) {
@@ -65,24 +71,26 @@ static int ramdisk_add(struct ramdisk_dev *dev, int number, sector_t cap) {
 	}
 	dev->initialized = true;
 	return 0;
-	disk_add_error: del_gendisk(dev->gd);
-	disk_allocation_error: return return_code;
+disk_add_error: del_gendisk(dev->gd);
+disk_allocation_error: return return_code;
 }
 
-static void ramdisk_delete(struct ramdisk_dev *dev) {
-	if (dev->initialized == false) {
+static void ramdisk_delete(struct ramdisk_dev *dev)
+{
+	if (dev->initialized == false)
 		return;
-	}
 	del_gendisk(dev->gd);
 	put_disk(dev->gd);
 }
 
-static void cleanup(void) {
+static void cleanup(void)
+{
 	ramdisk_delete(&dev_a);
 	ramdisk_delete(&dev_b);
 }
 
-static int __init ramdisk_init(void) {
+static int __init ramdisk_init(void)
+{
 	memset(&ramdisk_ops, 0, sizeof(ramdisk_ops));
 	ramdisk_ops.submit_bio = ramdisk_submit_bio;
 	ramdisk_ops.owner = THIS_MODULE;
@@ -105,12 +113,13 @@ static int __init ramdisk_init(void) {
 
 	return 0;
 
-disk_add_error: 
+disk_add_error:
 	cleanup();
 	return return_code;
 }
 
-static void __exit ramdisk_exit(void) {
+static void __exit ramdisk_exit(void)
+{
 	cleanup();
 }
 
