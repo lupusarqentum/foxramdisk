@@ -9,4 +9,4 @@ ccflags-y := 	-Wall					\
 
 obj-m := ramdisk.o
 
-ramdisk-y := src/main.o src/ramdisk_store.o
+ramdisk-y := src/ramdisk.o src/ramdisk_store.o
