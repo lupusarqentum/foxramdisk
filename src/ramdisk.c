@@ -4,7 +4,9 @@
 #include <linux/blkdev.h>
 #include <linux/blk_types.h>
 #include <linux/module.h>
+#include <linux/types.h>
 
+#include "linux/device.h"
 #include "ramdisk_store.h"
 
 #define MAX_RAMDISK_DEVICES_COUNT 64
@@ -18,28 +20,108 @@ static struct queue_limits limits;
 struct ramdisk_dev {
 	struct gendisk *gd;
 	struct rd_store *store;
+	atomic64_t failed_reads;
+	atomic64_t failed_writes;
+	atomic64_t failed_discards;
 	bool initialized;
 };
 
 static struct ramdisk_dev devices[MAX_RAMDISK_DEVICES_COUNT];
 static uint32_t devices_added;
 
-static void ramdisk_read(struct bio *bio, struct rd_store *rd)
+static ssize_t ramdisk_rd_stats_show(struct device *dev,
+	struct device_attribute *attr,
+	char *buf);
+
+static ssize_t ramdisk_stats_show(struct device *dev,
+	struct device_attribute *attr,
+	char *buf);
+
+static DEVICE_ATTR(total_bytes_written, 0444, ramdisk_rd_stats_show, NULL);
+static DEVICE_ATTR(total_bytes_discarded, 0444, ramdisk_rd_stats_show, NULL);
+static DEVICE_ATTR(total_bytes_read, 0444, ramdisk_rd_stats_show, NULL);
+static DEVICE_ATTR(raw_blocks_count, 0444, ramdisk_rd_stats_show, NULL);
+static DEVICE_ATTR(zeroed_blocks_count, 0444, ramdisk_rd_stats_show, NULL);
+
+static DEVICE_ATTR(failed_reads, 0444, ramdisk_stats_show, NULL);
+static DEVICE_ATTR(failed_writes, 0444, ramdisk_stats_show, NULL);
+static DEVICE_ATTR(failed_discards, 0444, ramdisk_stats_show, NULL);
+
+static struct attribute *ramdisk_attrs[] = {
+	&dev_attr_total_bytes_written.attr,
+	&dev_attr_total_bytes_discarded.attr,
+	&dev_attr_total_bytes_read.attr,
+	&dev_attr_raw_blocks_count.attr,
+	&dev_attr_zeroed_blocks_count.attr,
+	&dev_attr_failed_reads.attr,
+	&dev_attr_failed_writes.attr,
+	&dev_attr_failed_discards.attr,
+	NULL,
+};
+
+ATTRIBUTE_GROUPS(ramdisk);
+
+static ssize_t ramdisk_rd_stats_show(struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
 {
-	char *buf;
+	struct ramdisk_dev *rd_dev = dev_to_disk(dev)->private_data;
+	struct rd_stats_snapshot stats_snapshot;
+	uint64_t stat;
+	int err;
+
+	err = rd_get_stats(rd_dev->store, &stats_snapshot);
+	if (err != 0)
+		return err;
+
+	if (attr == &dev_attr_total_bytes_written)
+		stat = stats_snapshot.total_bytes_written;
+	else if (attr == &dev_attr_total_bytes_read)
+		stat = stats_snapshot.total_bytes_read;
+	else if (attr == &dev_attr_total_bytes_discarded)
+		stat = stats_snapshot.total_bytes_discarded;
+	else if (attr == &dev_attr_raw_blocks_count)
+		stat = stats_snapshot.raw_blocks_count;
+	else if (attr == &dev_attr_zeroed_blocks_count)
+		stat = stats_snapshot.zeroed_blocks_count;
+	else
+		return -EINVAL;
+	return sysfs_emit(buf, "%llu\n", (unsigned long long)stat);
+}
+
+static ssize_t ramdisk_stats_show(struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
+{
+	struct ramdisk_dev *rd_dev = dev_to_disk(dev)->private_data;
+	uint64_t stat;
+
+	if (attr == &dev_attr_failed_reads)
+		stat = atomic64_read(&rd_dev->failed_reads);
+	else if (attr == &dev_attr_failed_writes)
+		stat = atomic64_read(&rd_dev->failed_writes);
+	else if (attr == &dev_attr_failed_discards)
+		stat = atomic64_read(&rd_dev->failed_discards);
+	else
+		return -EINVAL;
+	return sysfs_emit(buf, "%llu\n", (unsigned long long)stat);
+}
+
+static void ramdisk_read(struct bio *bio, struct ramdisk_dev *dev)
+{
+	struct rd_store *rd = dev->store;
+	char *buf = NULL;
+	char *data = NULL;
 	uint32_t buf_pos = 0;
 	uint32_t buf_left_bytes = RD_BLOCK_SIZE;
 	uint64_t block_idx = bio->bi_iter.bi_sector / RD_BLOCK_SECTORS;
 	struct bio_vec bvl;
 	struct bvec_iter iter;
-	char *data;
 	int err_code;
 
 	buf = kmalloc(RD_BLOCK_SIZE, GFP_KERNEL);
-	if (!buf) {
-		bio_io_error(bio);
-		return;
-	}
+	if (!buf)
+		goto read_fail;
 
 	bio_for_each_segment(bvl, bio, iter) {
 		unsigned int len = bvl.bv_len;
@@ -76,33 +158,34 @@ static void ramdisk_read(struct bio *bio, struct rd_store *rd)
 		}
 
 		kunmap_local(data);
+		data = NULL;
 	}
 	bio_endio(bio);
 	kfree(buf);
 	return;
-
 read_fail:
-	kunmap_local(data);
-	bio_io_error(bio);
+	atomic64_inc(&dev->failed_reads);
+	if (data)
+		kunmap_local(data);
 	kfree(buf);
+	bio_io_error(bio);
 }
 
-static void ramdisk_write(struct bio *bio, struct rd_store *rd)
+static void ramdisk_write(struct bio *bio, struct ramdisk_dev *dev)
 {
-	char *buf;
+	struct rd_store *rd = dev->store;
+	char *buf = NULL;
+	char *data = NULL;
 	uint32_t buf_pos = 0;
 	uint32_t buf_left_bytes = RD_BLOCK_SIZE;
 	uint64_t block_idx = bio->bi_iter.bi_sector / RD_BLOCK_SECTORS;
 	struct bio_vec bvl;
 	struct bvec_iter iter;
-	char *data;
 	int err_code;
 
 	buf = kmalloc(RD_BLOCK_SIZE, GFP_KERNEL);
-	if (!buf) {
-		bio_io_error(bio);
-		return;
-	}
+	if (!buf)
+		goto write_fail;
 
 	bio_for_each_segment(bvl, bio, iter) {
 		unsigned int len = bvl.bv_len;
@@ -130,19 +213,22 @@ static void ramdisk_write(struct bio *bio, struct rd_store *rd)
 		}
 
 		kunmap_local(data);
+		data = NULL;
 	}
 	bio_endio(bio);
 	kfree(buf);
 	return;
-
 write_fail:
-	kunmap_local(data);
-	bio_io_error(bio);
+	atomic64_inc(&dev->failed_writes);
+	if (data)
+		kunmap_local(data);
 	kfree(buf);
+	bio_io_error(bio);
 }
 
-static void ramdisk_write_zeroes(struct bio *bio, struct rd_store *rd)
+static void ramdisk_write_zeroes(struct bio *bio, struct ramdisk_dev *dev)
 {
+	struct rd_store *rd = dev->store;
 	uint64_t blocks_left = bio->bi_iter.bi_size / RD_BLOCK_SIZE;
 	uint64_t block_idx = bio->bi_iter.bi_sector / RD_BLOCK_SECTORS;
 
@@ -151,6 +237,7 @@ static void ramdisk_write_zeroes(struct bio *bio, struct rd_store *rd)
 
 		if (err_code != 0) {
 			pr_err("ramdisk: error writing zeroes\n");
+			atomic64_inc(&dev->failed_discards);
 			bio_io_error(bio);
 			return;
 		}
@@ -164,7 +251,6 @@ static void ramdisk_write_zeroes(struct bio *bio, struct rd_store *rd)
 static void ramdisk_submit_bio(struct bio *bio)
 {
 	struct ramdisk_dev *dev = bio->bi_bdev->bd_disk->private_data;
-	struct rd_store *rd = dev->store;
 	enum req_op op = bio_op(bio);
 
 	if (bio->bi_iter.bi_sector % RD_BLOCK_SECTORS != 0) {
@@ -180,14 +266,14 @@ static void ramdisk_submit_bio(struct bio *bio)
 
 	switch (op) {
 	case REQ_OP_READ:
-		ramdisk_read(bio, rd);
+		ramdisk_read(bio, dev);
 		return;
 	case REQ_OP_WRITE:
-		ramdisk_write(bio, rd);
+		ramdisk_write(bio, dev);
 		return;
 	case REQ_OP_DISCARD:
 	case REQ_OP_WRITE_ZEROES:
-		ramdisk_write_zeroes(bio, rd);
+		ramdisk_write_zeroes(bio, dev);
 		return;
 	case REQ_OP_FLUSH:
 		// nothing to flush
@@ -218,6 +304,10 @@ static int ramdisk_add(uint64_t capacity)
 	device_index = devices_added;
 	devices_added++;
 
+	atomic64_set(&devices[device_index].failed_discards, 0);
+	atomic64_set(&devices[device_index].failed_writes, 0);
+	atomic64_set(&devices[device_index].failed_reads, 0);
+
 	rd_store = rd_new(capacity);
 	if (IS_ERR(rd_store)) {
 		pr_err("ramdisk: failed to allocate storage for new ramdisk\n");
@@ -246,7 +336,7 @@ static int ramdisk_add(uint64_t capacity)
 	devices[device_index].gd = gd;
 	devices[device_index].store = rd_store;
 	devices[device_index].initialized = true;
-	return_code = add_disk(gd);
+	return_code = device_add_disk(NULL, gd, ramdisk_groups);
 	if (return_code) {
 		pr_err("ramdisk: disk_add_error\n");
 		goto disk_add_error;
@@ -276,12 +366,6 @@ static void ramdisk_delete(uint32_t device_index)
 	rd_del(dev->store);
 }
 
-static void cleanup(void)
-{
-	for (uint32_t i = 0; i < devices_added; ++i)
-		ramdisk_delete(i);
-}
-
 static int __init ramdisk_init(void)
 {
 	memset(&ramdisk_ops, 0, sizeof(ramdisk_ops));
@@ -295,15 +379,15 @@ static int __init ramdisk_init(void)
 	limits.max_hw_discard_sectors = UINT_MAX;
 	limits.max_write_zeroes_sectors = UINT_MAX;
 
-	ramdisk_add(21);
-	ramdisk_add(4096);
+	ramdisk_add(1024 * 1024);
 
 	return 0;
 }
 
 static void __exit ramdisk_exit(void)
 {
-	cleanup();
+	for (uint32_t i = 0; i < devices_added; ++i)
+		ramdisk_delete(i);
 }
 
 module_init(ramdisk_init);

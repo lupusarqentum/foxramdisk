@@ -6,6 +6,14 @@
 #include <linux/types.h>
 #include <linux/blk_types.h>
 
+struct rd_stats_snapshot {
+	uint64_t total_bytes_discarded;
+	uint64_t total_bytes_read;
+	uint64_t total_bytes_written;
+	uint64_t zeroed_blocks_count;
+	uint64_t raw_blocks_count;
+};
+
 struct rd_store;
 
 #define RD_BLOCK_SHIFT 12
@@ -21,5 +29,6 @@ int rd_write(struct rd_store *store, uint64_t idx, const char *data);
 int rd_read(struct rd_store *store, uint64_t idx, char *buffer);
 int rd_write_zeroes(struct rd_store *store, uint64_t idx);
 uint64_t rd_get_capacity_sectors(struct rd_store *store);
+int rd_get_stats(struct rd_store *store, struct rd_stats_snapshot *out);
 
 #endif // _RAMDISK_STORE_H_
