@@ -290,6 +290,7 @@ static int __init ramdisk_init(void)
 	memset(&limits, 0, sizeof(limits));
 	limits.physical_block_size = RD_BLOCK_SIZE;
 	limits.logical_block_size = RD_BLOCK_SIZE;
+	limits.discard_granularity = RD_BLOCK_SIZE;
 	limits.features = BLK_FEAT_SYNCHRONOUS;
 	limits.max_hw_discard_sectors = UINT_MAX;
 	limits.max_write_zeroes_sectors = UINT_MAX;

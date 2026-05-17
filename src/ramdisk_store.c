@@ -8,7 +8,7 @@
 
 #include "ramdisk_store.h"
 
-enum rd_block_state : int {
+enum rd_block_state {
 	RD_BLOCK_ZEROED = 0,
 	RD_BLOCK_RAW,
 };
@@ -26,6 +26,9 @@ struct rd_store {
 
 struct rd_store *rd_new(uint64_t blocks_count)
 {
+	if (blocks_count == 0)
+		return ERR_PTR(-EINVAL);
+
 	uint64_t blocks_size = sizeof(struct rd_block) * blocks_count;
 
 	struct rd_store *result;
@@ -37,12 +40,17 @@ struct rd_store *rd_new(uint64_t blocks_count)
 
 	result->blocks_count = blocks_count;
 	result->blocks = vmalloc(blocks_size);
-	if (!result->blocks)
+	if (!result->blocks) {
+		kfree(result);
 		return ERR_PTR(-ENOMEM);
+	}
 
 	memset(result->blocks, 0, blocks_size);
-	for (uint64_t i = 0; i < blocks_count; ++i)
+	for (uint64_t i = 0; i < blocks_count; ++i) {
+		result->blocks[i].data = NULL;
 		rwlock_init(&result->blocks[i].lock);
+		result->blocks[i].state = RD_BLOCK_ZEROED;
+	}
 
 	return result;
 }
@@ -59,6 +67,11 @@ void rd_del(struct rd_store *store)
 
 int rd_write(struct rd_store *store, uint64_t idx, const char *data)
 {
+	if (unlikely(idx >= store->blocks_count)) {
+		pr_err("ramdisk: block index out of range");
+		return -EINVAL;
+	}
+
 	char *old_data = NULL;
 	char *ndata = kmalloc(RD_BLOCK_SIZE, GFP_KERNEL);
 
@@ -82,6 +95,11 @@ int rd_write(struct rd_store *store, uint64_t idx, const char *data)
 
 int rd_read(struct rd_store *store, uint64_t idx, char *buffer)
 {
+	if (unlikely(idx >= store->blocks_count)) {
+		pr_err("ramdisk: block index out of range");
+		return -EINVAL;
+	}
+
 	read_lock(&store->blocks[idx].lock);
 	if (store->blocks[idx].state == RD_BLOCK_ZEROED)
 		memset(buffer, 0, RD_BLOCK_SIZE);
@@ -93,6 +111,11 @@ int rd_read(struct rd_store *store, uint64_t idx, char *buffer)
 
 int rd_write_zeroes(struct rd_store *store, uint64_t idx)
 {
+	if (unlikely(idx >= store->blocks_count)) {
+		pr_err("ramdisk: block index out of range");
+		return -EINVAL;
+	}
+
 	char *old_data = NULL;
 
 	write_lock(&store->blocks[idx].lock);

@@ -15,7 +15,7 @@ struct rd_store;
 
 // CAPACITY AND INDICES MEASURES IN RD_BLOCKS if not stated otherwise!
 
-struct rd_store *rd_new(uint64_t capacity);
+struct rd_store *rd_new(uint64_t blocks_count);
 void rd_del(struct rd_store *store);
 int rd_write(struct rd_store *store, uint64_t idx, const char *data);
 int rd_read(struct rd_store *store, uint64_t idx, char *buffer);
