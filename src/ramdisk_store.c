@@ -1,63 +1,112 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-#include <linux/string.h>
-#include <linux/slab.h>
 #include <linux/err.h>
+#include <linux/slab.h>
+#include <linux/spinlock.h>
+#include <linux/string.h>
+#include <linux/vmalloc.h>
 
 #include "ramdisk_store.h"
 
-enum rd_page_state {
-	RD_PAGE_ZEROED = 0,
-	RD_PAGE_RAW,
+enum rd_block_state : int {
+	RD_BLOCK_ZEROED = 0,
+	RD_BLOCK_RAW,
 };
 
-struct rd_page {
-	enum rd_page_state state;
+struct rd_block {
 	void *data;
+	rwlock_t lock;
+	enum rd_block_state state;
 };
 
 struct rd_store {
-	uint64_t capacity;
+	uint64_t blocks_count;
+	struct rd_block *blocks;
 };
 
-struct rd_store *rd_new(uint64_t capacity)
+struct rd_store *rd_new(uint64_t blocks_count)
 {
+	uint64_t blocks_size = sizeof(struct rd_block) * blocks_count;
+
 	struct rd_store *result;
 
 	result = kmalloc(sizeof(*result), GFP_KERNEL);
 
-	if (result) {
-		result->capacity = capacity;
-		return result;
-	}
-	return ERR_PTR(-ENOMEM);
+	if (!result)
+		return ERR_PTR(-ENOMEM);
+
+	result->blocks_count = blocks_count;
+	result->blocks = vmalloc(blocks_size);
+	if (!result->blocks)
+		return ERR_PTR(-ENOMEM);
+
+	memset(result->blocks, 0, blocks_size);
+	for (uint64_t i = 0; i < blocks_count; ++i)
+		rwlock_init(&result->blocks[i].lock);
+
+	return result;
 }
 
 void rd_del(struct rd_store *store)
 {
+	for (uint64_t i = 0; i < store->blocks_count; ++i) {
+		if (store->blocks[i].state == RD_BLOCK_RAW)
+			kfree(store->blocks[i].data);
+	}
+	vfree(store->blocks);
 	kfree(store);
 }
 
 int rd_write(struct rd_store *store, uint64_t idx, const char *data)
 {
+	char *old_data = NULL;
+	char *ndata = kmalloc(RD_BLOCK_SIZE, GFP_KERNEL);
+
+	if (!ndata)
+		return -ENOMEM;
+
+	memcpy(ndata, data, RD_BLOCK_SIZE);
+
+	write_lock(&store->blocks[idx].lock);
+	if (store->blocks[idx].state == RD_BLOCK_ZEROED) {
+		store->blocks[idx].state = RD_BLOCK_RAW;
+		store->blocks[idx].data = ndata;
+	} else if (store->blocks[idx].state == RD_BLOCK_RAW) {
+		old_data = store->blocks[idx].data;
+		store->blocks[idx].data = ndata;
+	}
+	write_unlock(&store->blocks[idx].lock);
+	kfree(old_data);
 	return 0;
 }
 
-static const char running_line[] = "A quick brown fox jumps over the lazy dog\n";
-
 int rd_read(struct rd_store *store, uint64_t idx, char *buffer)
 {
-	for (size_t i = 0; i < RD_BLOCK_SIZE; ++i)
-		buffer[i] = running_line[i % (sizeof(running_line) - 1)];
+	read_lock(&store->blocks[idx].lock);
+	if (store->blocks[idx].state == RD_BLOCK_ZEROED)
+		memset(buffer, 0, RD_BLOCK_SIZE);
+	else if (store->blocks[idx].state == RD_BLOCK_RAW)
+		memcpy(buffer, store->blocks[idx].data, RD_BLOCK_SIZE);
+	read_unlock(&store->blocks[idx].lock);
 	return 0;
 }
 
 int rd_write_zeroes(struct rd_store *store, uint64_t idx)
 {
+	char *old_data = NULL;
+
+	write_lock(&store->blocks[idx].lock);
+	if (store->blocks[idx].state == RD_BLOCK_RAW) {
+		old_data = store->blocks[idx].data;
+		store->blocks[idx].data = NULL;
+		store->blocks[idx].state = RD_BLOCK_ZEROED;
+	}
+	write_unlock(&store->blocks[idx].lock);
+	kfree(old_data);
 	return 0;
 }
 
 uint64_t rd_get_capacity_sectors(struct rd_store *store)
 {
-	return store->capacity * RD_BLOCK_SECTORS;
+	return store->blocks_count * RD_BLOCK_SECTORS;
 }
