@@ -3,19 +3,19 @@
 #include <linux/bio.h>
 #include <linux/blkdev.h>
 #include <linux/blk_types.h>
+#include <linux/device.h>
 #include <linux/module.h>
 #include <linux/types.h>
 
-#include "linux/device.h"
 #include "ramdisk_store.h"
 
 #define MAX_RAMDISK_DEVICES_COUNT 64
 
-// ramdisk is already taken by drivers/block/brd.c
-static const char *ramdisk_name = "foxramdisk";
-
 static struct block_device_operations ramdisk_ops;
 static struct queue_limits limits;
+
+// ramdisk is already taken by drivers/block/brd.c
+static const char *ramdisk_name = "foxramdisk";
 
 struct ramdisk_dev {
 	struct gendisk *gd;
@@ -23,11 +23,14 @@ struct ramdisk_dev {
 	atomic64_t failed_reads;
 	atomic64_t failed_writes;
 	atomic64_t failed_discards;
+	const char *compression_name;
 	bool initialized;
 };
 
 static struct ramdisk_dev devices[MAX_RAMDISK_DEVICES_COUNT];
 static uint32_t devices_added;
+
+static const char *new_device_compression = "842";
 
 static ssize_t ramdisk_rd_stats_show(struct device *dev,
 	struct device_attribute *attr,
@@ -42,10 +45,13 @@ static DEVICE_ATTR(total_bytes_discarded, 0444, ramdisk_rd_stats_show, NULL);
 static DEVICE_ATTR(total_bytes_read, 0444, ramdisk_rd_stats_show, NULL);
 static DEVICE_ATTR(raw_blocks_count, 0444, ramdisk_rd_stats_show, NULL);
 static DEVICE_ATTR(zeroed_blocks_count, 0444, ramdisk_rd_stats_show, NULL);
+static DEVICE_ATTR(compressed_blocks_count, 0444, ramdisk_rd_stats_show, NULL);
+static DEVICE_ATTR(compressed_data_size, 0444, ramdisk_rd_stats_show, NULL);
 
 static DEVICE_ATTR(failed_reads, 0444, ramdisk_stats_show, NULL);
 static DEVICE_ATTR(failed_writes, 0444, ramdisk_stats_show, NULL);
 static DEVICE_ATTR(failed_discards, 0444, ramdisk_stats_show, NULL);
+static DEVICE_ATTR(compression_name, 0444, ramdisk_stats_show, NULL);
 
 static struct attribute *ramdisk_attrs[] = {
 	&dev_attr_total_bytes_written.attr,
@@ -53,9 +59,12 @@ static struct attribute *ramdisk_attrs[] = {
 	&dev_attr_total_bytes_read.attr,
 	&dev_attr_raw_blocks_count.attr,
 	&dev_attr_zeroed_blocks_count.attr,
+	&dev_attr_compressed_blocks_count.attr,
 	&dev_attr_failed_reads.attr,
 	&dev_attr_failed_writes.attr,
 	&dev_attr_failed_discards.attr,
+	&dev_attr_compressed_data_size.attr,
+	&dev_attr_compression_name.attr,
 	NULL,
 };
 
@@ -84,6 +93,10 @@ static ssize_t ramdisk_rd_stats_show(struct device *dev,
 		stat = stats_snapshot.raw_blocks_count;
 	else if (attr == &dev_attr_zeroed_blocks_count)
 		stat = stats_snapshot.zeroed_blocks_count;
+	else if (attr == &dev_attr_compressed_blocks_count)
+		stat = stats_snapshot.compressed_blocks_count;
+	else if (attr == &dev_attr_compressed_data_size)
+		stat = stats_snapshot.compressed_data_size;
 	else
 		return -EINVAL;
 	return sysfs_emit(buf, "%llu\n", (unsigned long long)stat);
@@ -95,6 +108,9 @@ static ssize_t ramdisk_stats_show(struct device *dev,
 {
 	struct ramdisk_dev *rd_dev = dev_to_disk(dev)->private_data;
 	uint64_t stat;
+
+	if (attr == &dev_attr_compression_name)
+		return sysfs_emit(buf, "%s\n", rd_dev->compression_name);
 
 	if (attr == &dev_attr_failed_reads)
 		stat = atomic64_read(&rd_dev->failed_reads);
@@ -287,7 +303,7 @@ static void ramdisk_submit_bio(struct bio *bio)
 	}
 }
 
-static int ramdisk_add(uint64_t capacity)
+static int ramdisk_add(uint64_t capacity, const char *compression_name)
 {
 	int return_code;
 	uint32_t device_index;
@@ -308,7 +324,7 @@ static int ramdisk_add(uint64_t capacity)
 	atomic64_set(&devices[device_index].failed_writes, 0);
 	atomic64_set(&devices[device_index].failed_reads, 0);
 
-	rd_store = rd_new(capacity);
+	rd_store = rd_new(capacity, compression_name);
 	if (IS_ERR(rd_store)) {
 		pr_err("ramdisk: failed to allocate storage for new ramdisk\n");
 		return_code = PTR_ERR(rd_store);
@@ -335,13 +351,13 @@ static int ramdisk_add(uint64_t capacity)
 	set_capacity(gd, rd_get_capacity_sectors(rd_store));
 	devices[device_index].gd = gd;
 	devices[device_index].store = rd_store;
-	devices[device_index].initialized = true;
+	devices[device_index].compression_name = compression_name;
 	return_code = device_add_disk(NULL, gd, ramdisk_groups);
 	if (return_code) {
 		pr_err("ramdisk: disk_add_error\n");
 		goto disk_add_error;
 	}
-
+	devices[device_index].initialized = true;
 	return device_index;
 disk_add_error:
 disk_name_formatting_error:
@@ -349,7 +365,6 @@ disk_name_formatting_error:
 disk_allocation_error:
 	rd_del(rd_store);
 fail_allocating_rd_store:
-	devices_added--;
 return_with_error:
 	return return_code;
 }
@@ -369,9 +384,11 @@ static void ramdisk_delete(uint32_t device_index)
 static int __init ramdisk_init(void)
 {
 	memset(&ramdisk_ops, 0, sizeof(ramdisk_ops));
+	memset(&limits, 0, sizeof(limits));
+
 	ramdisk_ops.submit_bio = ramdisk_submit_bio;
 	ramdisk_ops.owner = THIS_MODULE;
-	memset(&limits, 0, sizeof(limits));
+
 	limits.physical_block_size = RD_BLOCK_SIZE;
 	limits.logical_block_size = RD_BLOCK_SIZE;
 	limits.discard_granularity = RD_BLOCK_SIZE;
@@ -379,7 +396,7 @@ static int __init ramdisk_init(void)
 	limits.max_hw_discard_sectors = UINT_MAX;
 	limits.max_write_zeroes_sectors = UINT_MAX;
 
-	ramdisk_add(1024 * 1024);
+	ramdisk_add(1024 * 1024, new_device_compression);
 
 	return 0;
 }
