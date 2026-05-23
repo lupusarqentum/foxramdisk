@@ -24,6 +24,12 @@ enum rd_block_state {
 	RD_BLOCK_COMPRESSED,
 };
 
+/**
+ * struct rd_block - storage representation of a logical block
+ * @data: if state is raw or compressed, a pointer to kmalloc'ed data buffer, otherwise, NULL
+ * @size: if data is not NULL, size of the buffer. For raw state, must always be RD_BLOCK_SIZE
+ * @state: state of this specific block
+ */
 struct rd_block {
 	void *data;
 	size_t size;
@@ -37,6 +43,13 @@ struct rd_stats {
 	atomic64_t compressed_data_size;
 };
 
+/**
+ * struct comp_ctx - compression context
+ * @ops: pointer to compressor operations such as compress, decompress, etc.
+ * @priv_data: private data used by the compressor. Passed to the compressor and used by it.
+ * @tmp_buf: a buffer of at least RD_BLOCK_SIZE that can be used by ramdisk storage
+ * implementation when compressing or decompressing data. It's not accessed by anyone else.
+ */
 struct comp_ctx {
 	const struct rd_comp_ops *ops;
 	void                     *priv_data;
@@ -48,6 +61,10 @@ struct rd_store {
 	struct rd_block *blocks;
 	struct rd_stats stats;
 
+	/**
+	 * @lock:
+	 * Protects ALL feilds (except stats) of rd_store from concurrent access
+	 */
 	struct semaphore lock;
 
 	struct comp_ctx comp_ctx;
