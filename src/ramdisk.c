@@ -30,7 +30,7 @@ struct ramdisk_dev {
 static struct ramdisk_dev devices[MAX_RAMDISK_DEVICES_COUNT];
 static uint32_t devices_added;
 
-static const char *new_device_compression = "842";
+static const char *new_device_compression = "deflate";
 
 static ssize_t ramdisk_rd_stats_show(struct device *dev,
 	struct device_attribute *attr,

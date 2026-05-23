@@ -5,19 +5,21 @@
 #include "ramdisk_compressor.h"
 #include "backend_nocomp.c"
 #include "backend_842.c"
+#include "backend_deflate.c"
 
 struct rd_comp_entry {
 	const char *name;
-	struct rd_comp_ops *ops;
+	const struct rd_comp_ops *ops;
 };
 
 static struct rd_comp_entry rd_comps_index[] = {
-	{ .name = "nocomp",   .ops = &nocomp_ops },
-	{ .name = "842",      .ops = &c842_ops },
+	{ .name = "nocomp",   .ops = &rd_nocomp_ops },
+	{ .name = "842",      .ops = &rd_842_ops },
+	{ .name = "deflate",  .ops = &rd_deflate_ops },
 	{ .name = NULL,       .ops = NULL } // sentinel
 };
 
-struct rd_comp_ops *rd_lookup_comp(const char *name)
+const struct rd_comp_ops *rd_lookup_comp(const char *name)
 {
 	for (struct rd_comp_entry *i = rd_comps_index; i->name; i++) {
 		if (!strcmp(i->name, name))

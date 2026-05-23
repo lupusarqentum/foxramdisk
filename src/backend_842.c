@@ -6,7 +6,7 @@
 
 #include "ramdisk_compressor.h"
 
-static void *c842_create(size_t max_data_to_compress_size)
+static void *rd_842_create(size_t max_data_to_compress_size)
 {
 	void *workmem = kmalloc(SW842_MEM_COMPRESS, GFP_KERNEL);
 
@@ -15,12 +15,12 @@ static void *c842_create(size_t max_data_to_compress_size)
 	return workmem;
 }
 
-static void c842_del(void *private_data)
+static void rd_842_del(void *private_data)
 {
 	kfree(private_data);
 }
 
-static ssize_t c842_compress(void *private_data,
+static ssize_t rd_842_compress(void *private_data,
 	const char *src,
 	size_t slen,
 	char *dst,
@@ -35,7 +35,7 @@ static ssize_t c842_compress(void *private_data,
 	return ret;
 }
 
-static ssize_t c842_decompress(void *private_data,
+static ssize_t rd_842_decompress(void *private_data,
 	const char *src,
 	size_t slen,
 	char *dst,
@@ -50,9 +50,9 @@ static ssize_t c842_decompress(void *private_data,
 	return ret;
 }
 
-static struct rd_comp_ops c842_ops = {
-	.create = c842_create,
-	.del = c842_del,
-	.compress = c842_compress,
-	.decompress = c842_decompress
+static const struct rd_comp_ops rd_842_ops = {
+	.create = rd_842_create,
+	.del = rd_842_del,
+	.compress = rd_842_compress,
+	.decompress = rd_842_decompress
 };

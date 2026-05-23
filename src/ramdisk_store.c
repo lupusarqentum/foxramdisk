@@ -40,9 +40,9 @@ struct rd_stats {
 };
 
 struct comp_ctx {
-	struct rd_comp_ops *ops;
-	void               *priv_data;
-	void               *tmp_buf;
+	const struct rd_comp_ops *ops;
+	void                     *priv_data;
+	void                     *tmp_buf;
 };
 
 struct rd_store {

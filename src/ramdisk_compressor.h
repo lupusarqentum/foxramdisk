@@ -27,6 +27,6 @@ struct rd_comp_ops {
 	);
 };
 
-struct rd_comp_ops *rd_lookup_comp(const char *name);
+const struct rd_comp_ops *rd_lookup_comp(const char *name);
 
 #endif

@@ -5,16 +5,16 @@
 
 #include "ramdisk_compressor.h"
 
-static void *nocomp_create(size_t max_data_to_compress_size)
+static void *rd_nocomp_create(size_t max_data_to_compress_size)
 {
 	return NULL;
 }
 
-static void nocomp_del(void *private_data)
+static void rd_nocomp_del(void *private_data)
 {
 }
 
-static ssize_t nocomp_compress(void *private_data,
+static ssize_t rd_nocomp_compress(void *private_data,
 	const char *src,
 	size_t slen,
 	char *dst,
@@ -23,7 +23,7 @@ static ssize_t nocomp_compress(void *private_data,
 	return -ENOMEM;
 }
 
-static ssize_t nocomp_decompress(void *private_data,
+static ssize_t rd_nocomp_decompress(void *private_data,
 	const char *src,
 	size_t slen,
 	char *dst,
@@ -33,9 +33,9 @@ static ssize_t nocomp_decompress(void *private_data,
 	return -EINVAL;
 }
 
-static struct rd_comp_ops nocomp_ops = {
-	.create = nocomp_create,
-	.del = nocomp_del,
-	.compress = nocomp_compress,
-	.decompress = nocomp_decompress
+static const struct rd_comp_ops rd_nocomp_ops = {
+	.create = rd_nocomp_create,
+	.del = rd_nocomp_del,
+	.compress = rd_nocomp_compress,
+	.decompress = rd_nocomp_decompress
 };
