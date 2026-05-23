@@ -52,6 +52,7 @@ static DEVICE_ATTR(failed_reads, 0444, ramdisk_stats_show, NULL);
 static DEVICE_ATTR(failed_writes, 0444, ramdisk_stats_show, NULL);
 static DEVICE_ATTR(failed_discards, 0444, ramdisk_stats_show, NULL);
 static DEVICE_ATTR(compression_name, 0444, ramdisk_stats_show, NULL);
+static DEVICE_ATTR(block_size, 0444, ramdisk_stats_show, NULL);
 
 static struct attribute *ramdisk_attrs[] = {
 	&dev_attr_total_bytes_written.attr,
@@ -65,6 +66,7 @@ static struct attribute *ramdisk_attrs[] = {
 	&dev_attr_failed_discards.attr,
 	&dev_attr_compressed_data_size.attr,
 	&dev_attr_compression_name.attr,
+	&dev_attr_block_size.attr,
 	NULL,
 };
 
@@ -118,6 +120,8 @@ static ssize_t ramdisk_stats_show(struct device *dev,
 		stat = atomic64_read(&rd_dev->failed_writes);
 	else if (attr == &dev_attr_failed_discards)
 		stat = atomic64_read(&rd_dev->failed_discards);
+	else if (attr == &dev_attr_block_size)
+		stat = RD_BLOCK_SIZE;
 	else
 		return -EINVAL;
 	return sysfs_emit(buf, "%llu\n", (unsigned long long)stat);
