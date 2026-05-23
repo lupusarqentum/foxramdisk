@@ -7,6 +7,8 @@ ccflags-y := 	-Wall					\
 		-Werror=format-security			\
 		-Werror=implicit-function-declaration
 
-obj-m := hworld.o
+obj-m := foxramdisk.o
 
-hworld-y := src/main.o
+foxramdisk-y := src/ramdisk.o \
+	src/ramdisk_store.o \
+	src/ramdisk_compressor.o
