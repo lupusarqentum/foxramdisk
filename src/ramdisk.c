@@ -4,14 +4,15 @@
 #include <linux/blkdev.h>
 #include <linux/blk_types.h>
 #include <linux/device.h>
+#include <linux/device/class.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/mutex.h>
+#include "linux/sysfs.h"
 #include <linux/types.h>
 
 #include "ramdisk_store.h"
 #include "ramdisk_compressor.h"
-
-#define MAX_RAMDISK_DEVICES_COUNT 64
 
 static struct block_device_operations ramdisk_ops;
 static struct queue_limits limits;
@@ -38,8 +39,11 @@ struct ramdisk_dev {
 	bool initialized;
 };
 
-static struct ramdisk_dev devices[MAX_RAMDISK_DEVICES_COUNT];
+
+#define RAMDISK_MAX_DEVICES_COUNT 64
+static struct ramdisk_dev devices[RAMDISK_MAX_DEVICES_COUNT];
 static uint32_t devices_added;
+static DEFINE_MUTEX(device_add_mutex);
 
 static ssize_t ramdisk_rd_stats_show(struct device *dev,
 	struct device_attribute *attr,
@@ -341,7 +345,8 @@ static void ramdisk_submit_bio(struct bio *bio)
 	}
 }
 
-static int ramdisk_add(uint64_t capacity, const struct rd_comp_ops *comp)
+/* should NOT be used directly; use ramdisk_add intead */
+static int ramdisk_add_unsafe(uint64_t capacity, const struct rd_comp_ops *comp)
 {
 	int return_code;
 	uint32_t device_index;
@@ -350,8 +355,8 @@ static int ramdisk_add(uint64_t capacity, const struct rd_comp_ops *comp)
 	char *buf;
 	size_t size;
 
-	if (devices_added >= MAX_RAMDISK_DEVICES_COUNT) {
-		pr_err("ramdisk: ramdisk count limit exceeded\n");
+	if (devices_added >= RAMDISK_MAX_DEVICES_COUNT) {
+		pr_err("ramdisk: ramdisk devices count limit exceeded\n");
 		return_code = -ENOSPC;
 		goto return_with_error;
 	}
@@ -406,11 +411,23 @@ disk_name_formatting_error:
 disk_allocation_error:
 	rd_del(rd_store);
 fail_allocating_rd_store:
+	devices_added--;
 return_with_error:
 	return return_code;
 }
 
-/* should be called only on device exit, when there is no I/O */
+static int ramdisk_add(uint64_t capacity, const struct rd_comp_ops *comp)
+{
+	int ret;
+
+	mutex_lock(&device_add_mutex);
+	ret = ramdisk_add_unsafe(capacity, comp);
+	mutex_unlock(&device_add_mutex);
+
+	return ret;
+}
+
+/* should be called only on module exit, when there is no I/O, to prevent use-after-free */
 static void ramdisk_delete(uint32_t device_index)
 {
 	struct ramdisk_dev *dev = &devices[device_index];
@@ -423,8 +440,36 @@ static void ramdisk_delete(uint32_t device_index)
 	rd_del(dev->store);
 }
 
+static ssize_t hot_add_show(const struct class *class,
+	const struct class_attribute *attr, char *buf)
+{
+	int ret = ramdisk_add(default_capacity, default_compression);
+
+	if (ret < 0)
+		return ret;
+	return sysfs_emit(buf, "%d\n", ret);
+}
+
+/* reading the attribute has side effects, so perm is 0400 */
+static struct class_attribute class_attr_hot_add =
+	__ATTR(hot_add, 0400, hot_add_show, NULL);
+
+static struct attribute *ramdisk_control_class_attrs[] = {
+	&class_attr_hot_add.attr,
+	NULL,
+};
+
+ATTRIBUTE_GROUPS(ramdisk_control_class);
+
+static const struct class ramdisk_control_class = {
+	.name         = "foxramdisk-control",
+	.class_groups = ramdisk_control_class_groups,
+};
+
 static int __init ramdisk_init(void)
 {
+	int ret;
+
 	memset(&ramdisk_ops, 0, sizeof(ramdisk_ops));
 	memset(&limits, 0, sizeof(limits));
 
@@ -438,6 +483,12 @@ static int __init ramdisk_init(void)
 	limits.max_hw_discard_sectors = UINT_MAX;
 	limits.max_write_zeroes_sectors = UINT_MAX;
 
+	ret = class_register(&ramdisk_control_class);
+	if (ret) {
+		pr_err("ramdisk: fail registering a control class\n");
+		return ret;
+	}
+
 	if (!default_compression) {
 		default_compression = rd_lookup_comp("deflate");
 		if (!default_compression) {
@@ -446,8 +497,8 @@ static int __init ramdisk_init(void)
 		}
 	}
 
-	if (initial_devices_count > MAX_RAMDISK_DEVICES_COUNT) {
-		pr_err("ramdisk: can't create that many devices\n");
+	if (initial_devices_count > RAMDISK_MAX_DEVICES_COUNT) {
+		pr_err("ramdisk: refuse to create that many devices\n");
 		return -EINVAL;
 	}
 
