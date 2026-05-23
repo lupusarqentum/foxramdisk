@@ -17,14 +17,14 @@ This project is implemented mainly for fun and educational purposes. No warranti
 
 Both are planned to be improved.
 
--- No runtime device removal
--- Only one I/O operation can happen at a time.
+- No runtime device removal
+- Only one I/O operation can happen at a time.
 
 ## Building
 
 The project is expected to be built on **Fedora Server** with **Linux kernel 6.18**. Other distributions and Linux kernel versions are out of support, though they might work as well.
 
-The Linux kernel must be configured to support 842 and deflate algorithms (it is by default on Fedora).
+The Linux kernel must be configured to support 842 and deflate algorithms (it does by default on Fedora).
 
 To build the project on Fedora Server, you need to install build dependencies:
 
@@ -54,7 +54,7 @@ Recognized compression algorithm names are:
 - ```842```: 842 algorithm
 - ```deflate```: deflate algorithm
 
-Block devices created by the module receive ```/dev/foxramdiskN``` dev files in ```/dev```.
+Block devices created by the module receive ```/dev/foxramdiskN``` dev files in ```/dev```, where ```N``` is the device number.
 
 ```default_capacity``` and ```default_compression``` parameters can be set after the module has loaded. Example:
 
@@ -72,13 +72,13 @@ To do that, read from ```hot_add``` file:
 cat /sys/class/foxramdisk-control/hot_add
 ```
 
-If it succeeds at creating a new device, you will successfully read a device number attached to the new device. Device number is a number that's appended to foxramdisk in device file, for example, device number of ```/dev/foxramdisk7``` is ```7```.
+If it succeeds at creating a new device, you will successfully read a device number attached to the new device. Device number is a number that's appended to foxramdisk in device file, e.g., ```/dev/foxramdisk7```.
 
 ## Using devices
 
 You can use them like any other block devices, for example, you can format partition tables, filesystems, swaps, or use utilities such as ```dd```.
 
-The module collects statistics on I/O to devices and their storage representation. You can manually read sysfs files for individual stats, for example:
+The module collects statistics on I/O to devices and their storage representation. You can manually read sysfs files for individual stats. For example, the following command will show total size of compressed blocks:
 
 ```bash
 sudo cat /sys/block/foxramdiskN/storage_stat/compressed_data_size
@@ -94,6 +94,7 @@ An example of using the script:
 
 ```bash
 $ ./script/rd_display_stats.sh -h /dev/foxramdiskN
+
 Bytes written:                   282.21 MiB
 Bytes read:                      4.00 KiB
 Bytes discarded:                 0.00 B
@@ -148,7 +149,8 @@ There are multiple ways to help the project.
 You can:
 
 - open an issue or contact the developer, if you find a bug
-- write new code for planned updates and send a Pull Request on GitHub. See the next sections coding conventions and technical information.
+- send a PR fixing a bug, if you find one
+- write new code for planned updates and send a Pull Request on GitHub. See the next sections for coding conventions and technical information.
 
 ## Coding Conventions
 
@@ -157,7 +159,7 @@ Here are conventions used in this project:
 - Use [**conventional commit**](https://www.conventionalcommits.org/) messages.
 - Write your code with Linux kernel coding style in mind. All code in this repository is checked for code style violations by kernel **```checkpatch.pl```** script. It would be nice to check your code as well.
 - Ensure your code **builds and runs** as expected.
-- Write kernel-doc comments for all public functions. These comments should be consumable by kernel doc tools. For functions, document invariants, argument boundaries, **thread safety, and whether or not a function may sleep**.
+- Write kernel-doc comments for all public functions. These comments should be consumable by kernel doc tools. For functions, you should document invariants, argument boundaries, **thread safety, and whether or not a function may sleep**.
 
 ## Testing & CI
 
@@ -165,18 +167,18 @@ CI and testing infrastructure are planned, but not yet implemented.
 
 ## Project Architecture & Documentation
 
-You can find and view doc comments directly in the source code, or generate docs using ```kernel-doc``` script found in Linux kernel repository. What follows is a general architecture overview.
+You can find and view doc comments directly in the source code, or generate docs using ```kernel-doc``` script found in the Linux kernel repository. What follows is a general architecture overview.
 
 The code is split across different files.
 
 - ```src/ramdisk_store.h``` and ```src/ramdisk_store.c``` are responsible for actual storage logic. The data is organized into ```RD_BLOCK_SIZE``` blocks that can be independently accessed by ```rd_write```, ```rd_read``` and ```rd_write_zeroes``` function calls.
 - ```src/ramdisk.c``` is responsible for all communication with the Linux kernel API, such as module parameters, sysfs entries, disk registration, etc. It also receives I/O requests, processes them and calls ```ramdisk_store.h``` to complete them.
-- ```src/ramdisk_compressor.h``` and ```src/ramdisk_compressor.c``` provide a unified interface of compression algorithms for ```ramdisk_store```, as well as a registry to find these compressors by name.
+- ```src/ramdisk_compressor.h``` and ```src/ramdisk_compressor.c``` provide a unified interface of compression algorithms for ```ramdisk_store```, as well as a registry to find these compressors by their name.
 
 A few important notes:
 
 - For every supported compression algorithm, there is corresponding ```.c``` file that is included by ```ramdisk_compressor.c```.
-- If compression is not desired, there is a ```"nocomp"``` compression algorithm. With every compress operation it returns an error indicating the block is incompressible, effectively forcing the storage to store data uncompressed.
+- If compression is not desired, there is a ```"nocomp"``` compression algorithm. For every compress call it returns an error indicating the block is incompressible, effectively forcing the storage to store data uncompressed.
 - ```ramdisk_store``` implementation: all I/O requests (function calls read, write, write zeroes/discard) are passed to ```rd_io_high``` function. This function will switch on the operation code and call one of the "low" functions: ```rd_write_low```, ```rd_read_low```, or ```rd_write_zeroes_low```. "low" functions focus on I/O logic only, they don't do user arguments validation, mutual exclusion, and statistics update. ```rd_io_high``` function can be thought as a decorator that adds this functionality to more focused I/O functions.
 - Each block is represented by a ```struct rd_block``` that holds pointer to the data buffer (if applicable), the data buffer size and *state*.
 

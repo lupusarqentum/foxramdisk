@@ -564,5 +564,5 @@ module_exit(ramdisk_exit);
 
 MODULE_AUTHOR("Grigoriy Loboda");
 MODULE_DESCRIPTION("RAM backed block device driver");
-MODULE_VERSION("0.0.1");
+MODULE_VERSION("1.0.0");
 MODULE_LICENSE("GPL v2");
