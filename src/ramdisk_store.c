@@ -30,9 +30,6 @@ struct rd_block {
 };
 
 struct rd_stats {
-	atomic64_t total_bytes_discarded;
-	atomic64_t total_bytes_read;
-	atomic64_t total_bytes_written;
 	atomic64_t zeroed_blocks_count;
 	atomic64_t raw_blocks_count;
 	atomic64_t compressed_blocks_count;
@@ -125,9 +122,6 @@ struct rd_store *rd_new(uint64_t blocks_count, const char *comp)
 		result->blocks[i].size = 0;
 	}
 
-	atomic64_set(&result->stats.total_bytes_discarded, 0);
-	atomic64_set(&result->stats.total_bytes_read, 0);
-	atomic64_set(&result->stats.total_bytes_written, 0);
 	atomic64_set(&result->stats.raw_blocks_count, 0);
 	atomic64_set(&result->stats.compressed_blocks_count, 0);
 	atomic64_set(&result->stats.zeroed_blocks_count, (int64_t)blocks_count);
@@ -280,7 +274,6 @@ static int rd_io_high(struct rd_store *store,
 	}
 
 	struct rd_block *block = &store->blocks[idx];
-	atomic64_t *op_cnt = NULL;
 	size_t new_size, old_size;
 	enum rd_block_state new_state, old_state;
 	int64_t comp_size_delta = 0;
@@ -290,15 +283,12 @@ static int rd_io_high(struct rd_store *store,
 
 	switch (op) {
 	case RD_OP_READ:
-		op_cnt = &store->stats.total_bytes_read;
 		ret = rd_read_low(store, idx, buffer);
 		break;
 	case RD_OP_WRITE:
-		op_cnt = &store->stats.total_bytes_written;
 		ret = rd_write_low(store, idx, data);
 		break;
 	case RD_OP_WRITE_ZEROES:
-		op_cnt = &store->stats.total_bytes_discarded;
 		ret = rd_write_zeroes_low(store, idx);
 		break;
 	}
@@ -315,7 +305,6 @@ static int rd_io_high(struct rd_store *store,
 	if (new_state == RD_BLOCK_COMPRESSED)
 		comp_size_delta += (int64_t)new_size;
 	atomic64_add(comp_size_delta, &store->stats.compressed_data_size);
-	atomic64_add(RD_BLOCK_SIZE, op_cnt);
 exit:
 	up(&store->lock);
 	return ret;
@@ -345,13 +334,6 @@ int rd_get_stats(struct rd_store *store, struct rd_stats_snapshot *out)
 {
 	if (unlikely(!store))
 		return -EINVAL;
-
-	out->total_bytes_read =
-		atomic64_read(&store->stats.total_bytes_read);
-	out->total_bytes_written =
-		atomic64_read(&store->stats.total_bytes_written);
-	out->total_bytes_discarded =
-		atomic64_read(&store->stats.total_bytes_discarded);
 
 	out->raw_blocks_count =
 		atomic64_read(&store->stats.raw_blocks_count);

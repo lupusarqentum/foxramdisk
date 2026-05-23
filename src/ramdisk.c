@@ -23,6 +23,9 @@ struct ramdisk_dev {
 	atomic64_t failed_reads;
 	atomic64_t failed_writes;
 	atomic64_t failed_discards;
+	atomic64_t total_bytes_discarded;
+	atomic64_t total_bytes_read;
+	atomic64_t total_bytes_written;
 	const char *compression_name;
 	bool initialized;
 };
@@ -40,14 +43,14 @@ static ssize_t ramdisk_stats_show(struct device *dev,
 	struct device_attribute *attr,
 	char *buf);
 
-static DEVICE_ATTR(total_bytes_written, 0444, ramdisk_rd_stats_show, NULL);
-static DEVICE_ATTR(total_bytes_discarded, 0444, ramdisk_rd_stats_show, NULL);
-static DEVICE_ATTR(total_bytes_read, 0444, ramdisk_rd_stats_show, NULL);
 static DEVICE_ATTR(raw_blocks_count, 0444, ramdisk_rd_stats_show, NULL);
 static DEVICE_ATTR(zeroed_blocks_count, 0444, ramdisk_rd_stats_show, NULL);
 static DEVICE_ATTR(compressed_blocks_count, 0444, ramdisk_rd_stats_show, NULL);
 static DEVICE_ATTR(compressed_data_size, 0444, ramdisk_rd_stats_show, NULL);
 
+static DEVICE_ATTR(total_bytes_written, 0444, ramdisk_stats_show, NULL);
+static DEVICE_ATTR(total_bytes_discarded, 0444, ramdisk_stats_show, NULL);
+static DEVICE_ATTR(total_bytes_read, 0444, ramdisk_stats_show, NULL);
 static DEVICE_ATTR(failed_reads, 0444, ramdisk_stats_show, NULL);
 static DEVICE_ATTR(failed_writes, 0444, ramdisk_stats_show, NULL);
 static DEVICE_ATTR(failed_discards, 0444, ramdisk_stats_show, NULL);
@@ -85,13 +88,7 @@ static ssize_t ramdisk_rd_stats_show(struct device *dev,
 	if (err != 0)
 		return err;
 
-	if (attr == &dev_attr_total_bytes_written)
-		stat = stats_snapshot.total_bytes_written;
-	else if (attr == &dev_attr_total_bytes_read)
-		stat = stats_snapshot.total_bytes_read;
-	else if (attr == &dev_attr_total_bytes_discarded)
-		stat = stats_snapshot.total_bytes_discarded;
-	else if (attr == &dev_attr_raw_blocks_count)
+	if (attr == &dev_attr_raw_blocks_count)
 		stat = stats_snapshot.raw_blocks_count;
 	else if (attr == &dev_attr_zeroed_blocks_count)
 		stat = stats_snapshot.zeroed_blocks_count;
@@ -114,7 +111,13 @@ static ssize_t ramdisk_stats_show(struct device *dev,
 	if (attr == &dev_attr_compression_name)
 		return sysfs_emit(buf, "%s\n", rd_dev->compression_name);
 
-	if (attr == &dev_attr_failed_reads)
+	if (attr == &dev_attr_total_bytes_written)
+		stat = atomic64_read(&rd_dev->total_bytes_written);
+	else if (attr == &dev_attr_total_bytes_read)
+		stat = atomic64_read(&rd_dev->total_bytes_read);
+	else if (attr == &dev_attr_total_bytes_discarded)
+		stat = atomic64_read(&rd_dev->total_bytes_discarded);
+	else if (attr == &dev_attr_failed_reads)
 		stat = atomic64_read(&rd_dev->failed_reads);
 	else if (attr == &dev_attr_failed_writes)
 		stat = atomic64_read(&rd_dev->failed_writes);
@@ -156,6 +159,7 @@ static void ramdisk_read(struct bio *bio, struct ramdisk_dev *dev)
 					pr_err("ramdisk: read error %d\n", err_code);
 					goto read_fail;
 				}
+				atomic64_add(RD_BLOCK_SIZE, &dev->total_bytes_read);
 			}
 			memcpy(data + offset, buf + buf_pos, buf_left_bytes);
 			len -= buf_left_bytes;
@@ -171,6 +175,7 @@ static void ramdisk_read(struct bio *bio, struct ramdisk_dev *dev)
 					pr_err("ramdisk: read error %d\n", err_code);
 					goto read_fail;
 				}
+				atomic64_add(RD_BLOCK_SIZE, &dev->total_bytes_read);
 			}
 			memcpy(data + offset, buf + buf_pos, len);
 			buf_pos += len;
@@ -220,6 +225,7 @@ static void ramdisk_write(struct bio *bio, struct ramdisk_dev *dev)
 				pr_err("ramdisk: write error %d\n", err_code);
 				goto write_fail;
 			}
+			atomic64_add(RD_BLOCK_SIZE, &dev->total_bytes_written);
 			offset += buf_left_bytes;
 			len -= buf_left_bytes;
 			buf_pos = 0;
@@ -261,6 +267,7 @@ static void ramdisk_write_zeroes(struct bio *bio, struct ramdisk_dev *dev)
 			bio_io_error(bio);
 			return;
 		}
+		atomic64_add(RD_BLOCK_SIZE, &dev->total_bytes_discarded);
 		block_idx++;
 		blocks_left--;
 	}
@@ -327,6 +334,9 @@ static int ramdisk_add(uint64_t capacity, const char *compression_name)
 	atomic64_set(&devices[device_index].failed_discards, 0);
 	atomic64_set(&devices[device_index].failed_writes, 0);
 	atomic64_set(&devices[device_index].failed_reads, 0);
+	atomic64_set(&devices[device_index].total_bytes_discarded, 0);
+	atomic64_set(&devices[device_index].total_bytes_read, 0);
+	atomic64_set(&devices[device_index].total_bytes_written, 0);
 
 	rd_store = rd_new(capacity, compression_name);
 	if (IS_ERR(rd_store)) {

@@ -7,9 +7,6 @@
 #include <linux/blk_types.h>
 
 struct rd_stats_snapshot {
-	uint64_t total_bytes_discarded;
-	uint64_t total_bytes_read;
-	uint64_t total_bytes_written;
 	uint64_t zeroed_blocks_count;
 	uint64_t raw_blocks_count;
 	uint64_t compressed_blocks_count;
