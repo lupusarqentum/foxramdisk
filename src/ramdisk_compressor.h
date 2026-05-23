@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
+/* Copyright (C) 2026 Grigoriy Loboda */
 
 #ifndef _RAMDISK_COMPRESSOR_H_
 #define _RAMDISK_COMPRESSOR_H_

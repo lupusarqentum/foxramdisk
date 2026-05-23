@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Compressed RAM disk
+ * Copyright (C) 2026 Grigoriy Loboda
+ */
 
 #include <linux/bio.h>
 #include <linux/blkdev.h>
