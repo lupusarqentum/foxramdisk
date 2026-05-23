@@ -58,23 +58,41 @@ static DEVICE_ATTR(failed_discards, 0444, ramdisk_stats_show, NULL);
 static DEVICE_ATTR(compression_name, 0444, ramdisk_stats_show, NULL);
 static DEVICE_ATTR(block_size, 0444, ramdisk_stats_show, NULL);
 
-static struct attribute *ramdisk_attrs[] = {
+static struct attribute *ramdisk_io_attrs[] = {
 	&dev_attr_total_bytes_written.attr,
 	&dev_attr_total_bytes_discarded.attr,
 	&dev_attr_total_bytes_read.attr,
-	&dev_attr_raw_blocks_count.attr,
-	&dev_attr_zeroed_blocks_count.attr,
-	&dev_attr_compressed_blocks_count.attr,
 	&dev_attr_failed_reads.attr,
 	&dev_attr_failed_writes.attr,
 	&dev_attr_failed_discards.attr,
+	NULL,
+};
+
+static struct attribute *ramdisk_storage_attrs[] = {
+	&dev_attr_raw_blocks_count.attr,
+	&dev_attr_zeroed_blocks_count.attr,
+	&dev_attr_compressed_blocks_count.attr,
 	&dev_attr_compressed_data_size.attr,
 	&dev_attr_compression_name.attr,
 	&dev_attr_block_size.attr,
 	NULL,
 };
 
-ATTRIBUTE_GROUPS(ramdisk);
+static const struct attribute_group ramdisk_io_stats_group = {
+	.name = "io_stat",
+	.attrs = ramdisk_io_attrs,
+};
+
+static const struct attribute_group ramdisk_store_stats_group = {
+	.name = "storage_stat",
+	.attrs = ramdisk_storage_attrs,
+};
+
+static const struct attribute_group *ramdisk_groups[] = {
+	&ramdisk_io_stats_group,
+	&ramdisk_store_stats_group,
+	NULL,
+};
 
 static ssize_t ramdisk_rd_stats_show(struct device *dev,
 	struct device_attribute *attr,
