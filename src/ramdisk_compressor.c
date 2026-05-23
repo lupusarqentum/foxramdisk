@@ -27,3 +27,12 @@ const struct rd_comp_ops *rd_lookup_comp(const char *name)
 	}
 	return NULL;
 }
+
+const char *rd_get_comp_name(const struct rd_comp_ops *ops)
+{
+	for (struct rd_comp_entry *i = rd_comps_index; i->name; i++) {
+		if (i->ops == ops)
+			return i->name;
+	}
+	return NULL;
+}

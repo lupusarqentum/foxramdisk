@@ -6,6 +6,8 @@
 #include <linux/types.h>
 #include <linux/blk_types.h>
 
+#include "ramdisk_compressor.h"
+
 struct rd_stats_snapshot {
 	uint64_t zeroed_blocks_count;
 	uint64_t raw_blocks_count;
@@ -22,7 +24,7 @@ struct rd_store;
 
 // CAPACITY AND INDICES MEASURES IN RD_BLOCKS if not stated otherwise!
 
-struct rd_store *rd_new(uint64_t blocks_count, const char *comp);
+struct rd_store *rd_new(uint64_t blocks_count, const struct rd_comp_ops *comp);
 void rd_del(struct rd_store *store);
 int rd_write(struct rd_store *store, uint64_t idx, const char *data);
 int rd_read(struct rd_store *store, uint64_t idx, char *buffer);

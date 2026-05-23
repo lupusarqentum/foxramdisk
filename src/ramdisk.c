@@ -5,11 +5,12 @@
 #include <linux/blk_types.h>
 #include <linux/device.h>
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/types.h>
 
 #include "ramdisk_store.h"
+#include "ramdisk_compressor.h"
 
-#define MAX_COMPRESSION_NAME_LEN 64
 #define MAX_RAMDISK_DEVICES_COUNT 64
 
 static struct block_device_operations ramdisk_ops;
@@ -17,6 +18,12 @@ static struct queue_limits limits;
 
 // ramdisk is already taken by drivers/block/brd.c
 static const char *ramdisk_name = "foxramdisk";
+
+static unsigned int initial_devices_count = 1;
+static unsigned long default_capacity = 4096;
+
+static const struct rd_comp_ops *default_compression;
+// must point to struct with static lifetime; never free it
 
 struct ramdisk_dev {
 	struct gendisk *gd;
@@ -27,14 +34,12 @@ struct ramdisk_dev {
 	atomic64_t total_bytes_discarded;
 	atomic64_t total_bytes_read;
 	atomic64_t total_bytes_written;
-	char compression_name[MAX_COMPRESSION_NAME_LEN];
+	const struct rd_comp_ops *ops; // must point to static lifetime struct
 	bool initialized;
 };
 
 static struct ramdisk_dev devices[MAX_RAMDISK_DEVICES_COUNT];
 static uint32_t devices_added;
-
-static const char *new_device_compression = "deflate";
 
 static ssize_t ramdisk_rd_stats_show(struct device *dev,
 	struct device_attribute *attr,
@@ -127,8 +132,11 @@ static ssize_t ramdisk_stats_show(struct device *dev,
 	struct ramdisk_dev *rd_dev = dev_to_disk(dev)->private_data;
 	uint64_t stat;
 
-	if (attr == &dev_attr_compression_name)
-		return sysfs_emit(buf, "%s\n", rd_dev->compression_name);
+	if (attr == &dev_attr_compression_name) {
+		const char *comp_name = rd_get_comp_name(rd_dev->ops);
+
+		return sysfs_emit(buf, "%s\n", comp_name);
+	}
 
 	if (attr == &dev_attr_total_bytes_written)
 		stat = atomic64_read(&rd_dev->total_bytes_written);
@@ -333,7 +341,7 @@ static void ramdisk_submit_bio(struct bio *bio)
 	}
 }
 
-static int ramdisk_add(uint64_t capacity, const char *compression_name)
+static int ramdisk_add(uint64_t capacity, const struct rd_comp_ops *comp)
 {
 	int return_code;
 	uint32_t device_index;
@@ -356,8 +364,9 @@ static int ramdisk_add(uint64_t capacity, const char *compression_name)
 	atomic64_set(&devices[device_index].total_bytes_discarded, 0);
 	atomic64_set(&devices[device_index].total_bytes_read, 0);
 	atomic64_set(&devices[device_index].total_bytes_written, 0);
+	devices[device_index].ops = comp;
 
-	rd_store = rd_new(capacity, compression_name);
+	rd_store = rd_new(capacity, comp);
 	if (IS_ERR(rd_store)) {
 		pr_err("ramdisk: failed to allocate storage for new ramdisk\n");
 		return_code = PTR_ERR(rd_store);
@@ -379,11 +388,6 @@ static int ramdisk_add(uint64_t capacity, const char *compression_name)
 		return_code = -EINVAL;
 		goto disk_name_formatting_error;
 	}
-	if (strlen(compression_name) + 1 >= MAX_COMPRESSION_NAME_LEN) {
-		pr_err("ramdisk: compression name too long\n");
-		goto compression_name_error;
-	}
-	strcpy(devices[device_index].compression_name, compression_name);
 	gd->fops = &ramdisk_ops;
 	gd->private_data = &devices[device_index];
 	set_capacity(gd, rd_get_capacity_sectors(rd_store));
@@ -397,7 +401,6 @@ static int ramdisk_add(uint64_t capacity, const char *compression_name)
 	devices[device_index].initialized = true;
 	return device_index;
 disk_add_error:
-compression_name_error:
 disk_name_formatting_error:
 	put_disk(gd);
 disk_allocation_error:
@@ -407,6 +410,7 @@ return_with_error:
 	return return_code;
 }
 
+/* should be called only on device exit, when there is no I/O */
 static void ramdisk_delete(uint32_t device_index)
 {
 	struct ramdisk_dev *dev = &devices[device_index];
@@ -434,7 +438,21 @@ static int __init ramdisk_init(void)
 	limits.max_hw_discard_sectors = UINT_MAX;
 	limits.max_write_zeroes_sectors = UINT_MAX;
 
-	ramdisk_add(1024 * 1024, new_device_compression);
+	if (!default_compression) {
+		default_compression = rd_lookup_comp("deflate");
+		if (!default_compression) {
+			pr_err("ramdisk: missing default compression\n");
+			return -EINVAL;
+		}
+	}
+
+	if (initial_devices_count > MAX_RAMDISK_DEVICES_COUNT) {
+		pr_err("ramdisk: can't create that many devices\n");
+		return -EINVAL;
+	}
+
+	for (unsigned int i = 0; i < initial_devices_count; ++i)
+		ramdisk_add(default_capacity, default_compression);
 
 	return 0;
 }
@@ -444,6 +462,47 @@ static void __exit ramdisk_exit(void)
 	for (uint32_t i = 0; i < devices_added; ++i)
 		ramdisk_delete(i);
 }
+
+static int default_compression_get(char *buffer, const struct kernel_param *kp)
+{
+	int ret;
+	size_t max_sz = 64;
+	const char *comp_name = rd_get_comp_name(default_compression);
+
+	if (!comp_name)
+		return -EINVAL;
+
+	ret = snprintf(buffer, max_sz, "%s\n", comp_name);
+	return ret < max_sz ? ret : -EINVAL;
+}
+
+static int default_compression_set(const char *val, const struct kernel_param *kp)
+{
+	const struct rd_comp_ops *ops = rd_lookup_comp(val);
+
+	if (!ops)
+		return -EINVAL;
+
+	default_compression = ops;
+	return 0;
+}
+
+static const struct kernel_param_ops default_compression_ops = {
+	.get = &default_compression_get,
+	.set = &default_compression_set,
+};
+
+module_param(initial_devices_count, uint, 0444);
+MODULE_PARM_DESC(initial_devices_count,
+	"Number of ramdisk devices created at module load");
+
+module_param(default_capacity, ulong, 0644);
+MODULE_PARM_DESC(default_capacity,
+	"Default capacity (in blocks) for all new devices");
+
+module_param_cb(default_compression, &default_compression_ops, NULL, 0644);
+MODULE_PARM_DESC(default_compression,
+	"Default compression for all new devices");
 
 module_init(ramdisk_init);
 module_exit(ramdisk_exit);

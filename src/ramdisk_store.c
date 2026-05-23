@@ -52,18 +52,13 @@ struct rd_store {
 	struct comp_ctx comp_ctx;
 };
 
-static int rd_comp_ctx_create(struct rd_store *store, const char *comp_name)
+static int rd_comp_ctx_create(struct rd_store *store, const struct rd_comp_ops *comp)
 {
 	int err;
 
 	struct comp_ctx *ctx = &store->comp_ctx;
 
-	ctx->ops = rd_lookup_comp(comp_name);
-	if (!ctx->ops) {
-		err = -EINVAL;
-		pr_err("ramdisk: %s compression method not found\n", comp_name);
-		goto lookup_fail;
-	}
+	ctx->ops = comp;
 
 	store->comp_ctx.tmp_buf = kmalloc(RD_BLOCK_SIZE, GFP_KERNEL);
 	if (!ctx->tmp_buf) {
@@ -81,7 +76,6 @@ static int rd_comp_ctx_create(struct rd_store *store, const char *comp_name)
 priv_data_alloc_fail:
 	kfree(ctx->tmp_buf);
 tmp_buf_alloc_fail:
-lookup_fail:
 	return err;
 }
 
@@ -91,7 +85,7 @@ static void rd_comp_ctx_del(struct rd_store *store)
 	kfree(store->comp_ctx.tmp_buf);
 }
 
-struct rd_store *rd_new(uint64_t blocks_count, const char *comp)
+struct rd_store *rd_new(uint64_t blocks_count, const struct rd_comp_ops *comp)
 {
 	if (blocks_count >= U64_MAX / RD_BLOCK_SECTORS)
 		return ERR_PTR(-EINVAL);
