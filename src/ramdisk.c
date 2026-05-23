@@ -9,6 +9,7 @@
 
 #include "ramdisk_store.h"
 
+#define MAX_COMPRESSION_NAME_LEN 64
 #define MAX_RAMDISK_DEVICES_COUNT 64
 
 static struct block_device_operations ramdisk_ops;
@@ -26,7 +27,7 @@ struct ramdisk_dev {
 	atomic64_t total_bytes_discarded;
 	atomic64_t total_bytes_read;
 	atomic64_t total_bytes_written;
-	const char *compression_name;
+	char compression_name[MAX_COMPRESSION_NAME_LEN];
 	bool initialized;
 };
 
@@ -360,12 +361,16 @@ static int ramdisk_add(uint64_t capacity, const char *compression_name)
 		return_code = -EINVAL;
 		goto disk_name_formatting_error;
 	}
+	if (strlen(compression_name) + 1 >= MAX_COMPRESSION_NAME_LEN) {
+		pr_err("ramdisk: compression name too long\n");
+		goto compression_name_error;
+	}
+	strcpy(devices[device_index].compression_name, compression_name);
 	gd->fops = &ramdisk_ops;
 	gd->private_data = &devices[device_index];
 	set_capacity(gd, rd_get_capacity_sectors(rd_store));
 	devices[device_index].gd = gd;
 	devices[device_index].store = rd_store;
-	devices[device_index].compression_name = compression_name;
 	return_code = device_add_disk(NULL, gd, ramdisk_groups);
 	if (return_code) {
 		pr_err("ramdisk: disk_add_error\n");
@@ -374,6 +379,7 @@ static int ramdisk_add(uint64_t capacity, const char *compression_name)
 	devices[device_index].initialized = true;
 	return device_index;
 disk_add_error:
+compression_name_error:
 disk_name_formatting_error:
 	put_disk(gd);
 disk_allocation_error:
