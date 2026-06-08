@@ -511,6 +511,8 @@ static int __init ramdisk_init(void)
 
 static void __exit ramdisk_exit(void)
 {
+	class_unregister(&ramdisk_control_class);
+
 	for (uint32_t i = 0; i < devices_added; ++i)
 		ramdisk_delete(i);
 }
