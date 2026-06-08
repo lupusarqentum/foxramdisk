@@ -4,6 +4,8 @@
  * Copyright (C) 2026 Grigoriy Loboda
  */
 
+#include "foxramdisk_defs.h"
+
 #include <linux/bio.h>
 #include <linux/blkdev.h>
 #include <linux/blk_types.h>
@@ -20,9 +22,6 @@
 
 static struct block_device_operations ramdisk_ops;
 static struct queue_limits limits;
-
-// ramdisk is already taken by drivers/block/brd.c
-static const char *ramdisk_name = "foxramdisk";
 
 static unsigned int initial_devices_count = 1;
 static unsigned long default_capacity = 4096;
@@ -191,7 +190,7 @@ static void ramdisk_read(struct bio *bio, struct ramdisk_dev *dev)
 			if (buf_pos == 0) {
 				err_code = rd_read(rd, block_idx, buf);
 				if (err_code != 0) {
-					pr_err("ramdisk: read error %d\n", err_code);
+					pr_err("read error %d\n", err_code);
 					goto read_fail;
 				}
 				atomic64_add(RD_BLOCK_SIZE, &dev->total_bytes_read);
@@ -207,7 +206,7 @@ static void ramdisk_read(struct bio *bio, struct ramdisk_dev *dev)
 			if (buf_pos == 0) {
 				err_code = rd_read(rd, block_idx, buf);
 				if (err_code != 0) {
-					pr_err("ramdisk: read error %d\n", err_code);
+					pr_err("read error %d\n", err_code);
 					goto read_fail;
 				}
 				atomic64_add(RD_BLOCK_SIZE, &dev->total_bytes_read);
@@ -257,7 +256,7 @@ static void ramdisk_write(struct bio *bio, struct ramdisk_dev *dev)
 			memcpy(buf + buf_pos, data + offset, buf_left_bytes);
 			err_code = rd_write(rd, block_idx, buf);
 			if (err_code != 0) {
-				pr_err("ramdisk: write error %d\n", err_code);
+				pr_err("write error %d\n", err_code);
 				goto write_fail;
 			}
 			atomic64_add(RD_BLOCK_SIZE, &dev->total_bytes_written);
@@ -297,7 +296,7 @@ static void ramdisk_write_zeroes(struct bio *bio, struct ramdisk_dev *dev)
 		int err_code = rd_write_zeroes(rd, block_idx);
 
 		if (err_code != 0) {
-			pr_err("ramdisk: error writing zeroes\n");
+			pr_err("error writing zeroes\n");
 			atomic64_inc(&dev->failed_discards);
 			bio_io_error(bio);
 			return;
@@ -316,12 +315,12 @@ static void ramdisk_submit_bio(struct bio *bio)
 	enum req_op op = bio_op(bio);
 
 	if (bio->bi_iter.bi_sector % RD_BLOCK_SECTORS != 0) {
-		pr_err("ramdisk: assumption fail: first sector start is misaligned\n");
+		pr_err("assumption fail: first sector start is misaligned\n");
 		bio_io_error(bio);
 		return;
 	}
 	if (bio->bi_iter.bi_size % RD_BLOCK_SIZE != 0) {
-		pr_err("ramdisk: assumption fail: bio len is misaligned\n");
+		pr_err("assumption fail: bio len is misaligned\n");
 		bio_io_error(bio);
 		return;
 	}
@@ -342,7 +341,7 @@ static void ramdisk_submit_bio(struct bio *bio)
 		bio_endio(bio);
 		return;
 	default:
-		pr_err("ramdisk: unsupported operation enum req_op %d\n", op);
+		pr_err("unsupported operation enum req_op %d\n", op);
 		bio->bi_status = BLK_STS_NOTSUPP;
 		bio_endio(bio);
 		return;
@@ -360,7 +359,7 @@ static int ramdisk_add_unsafe(uint64_t capacity, const struct rd_comp_ops *comp)
 	size_t size;
 
 	if (devices_added >= RAMDISK_MAX_DEVICES_COUNT) {
-		pr_err("ramdisk: ramdisk devices count limit exceeded\n");
+		pr_err("devices count limit exceeded\n");
 		return_code = -ENOSPC;
 		goto return_with_error;
 	}
@@ -377,14 +376,14 @@ static int ramdisk_add_unsafe(uint64_t capacity, const struct rd_comp_ops *comp)
 
 	rd_store = rd_new(capacity, comp);
 	if (IS_ERR(rd_store)) {
-		pr_err("ramdisk: failed to allocate storage for new ramdisk\n");
+		pr_err("failed to allocate storage for new ramdisk\n");
 		return_code = PTR_ERR(rd_store);
 		goto fail_allocating_rd_store;
 	}
 
 	gd = blk_alloc_disk(&limits, NUMA_NO_NODE);
 	if (IS_ERR(gd)) {
-		pr_err("ramdisk: disk allocation error\n");
+		pr_err("disk allocation error\n");
 		return_code = PTR_ERR(gd);
 		goto disk_allocation_error;
 	}
@@ -392,8 +391,8 @@ static int ramdisk_add_unsafe(uint64_t capacity, const struct rd_comp_ops *comp)
 	buf = gd->disk_name;
 	size = DISK_NAME_LEN;
 
-	if (snprintf(buf, size, "%s%d", ramdisk_name, device_index) >= size) {
-		pr_err("ramdisk: formatted disk name would be too long\n");
+	if (snprintf(buf, size, "%s%d", DEV_FILE_NAME_PREFIX, device_index) >= size) {
+		pr_err("formatted disk name would be too long\n");
 		return_code = -EINVAL;
 		goto disk_name_formatting_error;
 	}
@@ -404,7 +403,7 @@ static int ramdisk_add_unsafe(uint64_t capacity, const struct rd_comp_ops *comp)
 	devices[device_index].store = rd_store;
 	return_code = device_add_disk(NULL, gd, ramdisk_groups);
 	if (return_code) {
-		pr_err("ramdisk: disk_add_error\n");
+		pr_err("disk_add_error\n");
 		goto disk_add_error;
 	}
 	devices[device_index].initialized = true;
@@ -489,20 +488,20 @@ static int __init ramdisk_init(void)
 
 	ret = class_register(&ramdisk_control_class);
 	if (ret) {
-		pr_err("ramdisk: fail registering a control class\n");
+		pr_err("fail registering a control class\n");
 		return ret;
 	}
 
 	if (!default_compression) {
 		default_compression = rd_lookup_comp("deflate");
 		if (!default_compression) {
-			pr_err("ramdisk: missing default compression\n");
+			pr_err("missing default compression\n");
 			return -EINVAL;
 		}
 	}
 
 	if (initial_devices_count > RAMDISK_MAX_DEVICES_COUNT) {
-		pr_err("ramdisk: refuse to create that many devices\n");
+		pr_err("refuse to create that many devices\n");
 		return -EINVAL;
 	}
 

@@ -5,6 +5,7 @@
 #include <linux/slab.h>
 #include <linux/sw842.h>
 
+#include "backend_842.h"
 #include "ramdisk_compressor.h"
 
 static void *rd_842_create(size_t max_data_to_compress_size)
@@ -51,7 +52,7 @@ static ssize_t rd_842_decompress(void *private_data,
 	return ret;
 }
 
-static const struct rd_comp_ops rd_842_ops = {
+const struct rd_comp_ops rd_842_ops = {
 	.create = rd_842_create,
 	.del = rd_842_del,
 	.compress = rd_842_compress,

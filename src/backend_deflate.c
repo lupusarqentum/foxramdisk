@@ -4,6 +4,9 @@
 #include <linux/slab.h>
 #include <linux/zlib.h>
 
+#include "backend_deflate.h"
+#include "ramdisk_compressor.h"
+
 struct rd_deflate_ctx {
 	struct z_stream_s cctx;
 	struct z_stream_s dctx;
@@ -131,7 +134,7 @@ static ssize_t rd_deflate_decompress(void *private_data,
 	return (ssize_t)inflate->total_in;
 }
 
-static const struct rd_comp_ops rd_deflate_ops = {
+const struct rd_comp_ops rd_deflate_ops = {
 	.create = rd_deflate_create,
 	.del = rd_deflate_del,
 	.compress = rd_deflate_compress,
