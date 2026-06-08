@@ -26,25 +26,15 @@
  * On success, they return (de)compressed data size.
  */
 struct rd_comp_ops {
-	void* (*create)(size_t max_data_to_compress_size);
+	void *(*create)(size_t max_data_to_compress_size);
 
 	void (*del)(void *private_data);
 
-	ssize_t (*compress)(
-		void *private_data,
-		const char *src,
-		size_t slen,
-		char *dst,
-		size_t dlen
-	);
+	ssize_t (*compress)(void *private_data, const char *src, size_t slen,
+			    char *dst, size_t dlen);
 
-	ssize_t (*decompress)(
-		void *private_data,
-		const char *src,
-		size_t slen,
-		char *dst,
-		size_t dlen
-	);
+	ssize_t (*decompress)(void *private_data, const char *src, size_t slen,
+			      char *dst, size_t dlen);
 };
 
 /**

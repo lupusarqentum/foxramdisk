@@ -52,8 +52,8 @@ struct rd_stats {
  */
 struct comp_ctx {
 	const struct rd_comp_ops *ops;
-	void                     *priv_data;
-	void                     *tmp_buf;
+	void *priv_data;
+	void *tmp_buf;
 };
 
 struct rd_store {
@@ -70,7 +70,8 @@ struct rd_store {
 	struct comp_ctx comp_ctx;
 };
 
-static int rd_comp_ctx_create(struct rd_store *store, const struct rd_comp_ops *comp)
+static int rd_comp_ctx_create(struct rd_store *store,
+			      const struct rd_comp_ops *comp)
 {
 	int err;
 
@@ -162,8 +163,8 @@ void rd_del(struct rd_store *store)
 }
 
 static void update_block_state_counters(struct rd_store *store,
-	enum rd_block_state old,
-	enum rd_block_state new)
+					enum rd_block_state old,
+					enum rd_block_state new)
 {
 	switch (old) {
 	case RD_BLOCK_ZEROED:
@@ -197,13 +198,8 @@ static int rd_write_low(struct rd_store *store, uint64_t idx, const char *data)
 	struct comp_ctx *ctx = &store->comp_ctx;
 	const void *copy_source;
 
-	new_size = ctx->ops->compress(
-		ctx->priv_data,
-		data,
-		RD_BLOCK_SIZE,
-		ctx->tmp_buf,
-		RD_BLOCK_SIZE
-	);
+	new_size = ctx->ops->compress(ctx->priv_data, data, RD_BLOCK_SIZE,
+				      ctx->tmp_buf, RD_BLOCK_SIZE);
 
 	if (new_size < 0) {
 		new_size = RD_BLOCK_SIZE;
@@ -257,22 +253,14 @@ static int rd_read_low(struct rd_store *store, uint64_t idx, char *buffer)
 	struct comp_ctx *ctx = &store->comp_ctx;
 	ssize_t err;
 
-	err = ctx->ops->decompress(
-		ctx->priv_data,
-		data,
-		size,
-		buffer,
-		RD_BLOCK_SIZE
-	);
+	err = ctx->ops->decompress(ctx->priv_data, data, size, buffer,
+				   RD_BLOCK_SIZE);
 
 	return err < 0 ? (int)err : 0;
 }
 
-static int rd_io_high(struct rd_store *store,
-	enum rd_op op,
-	uint64_t idx,
-	const char *data,
-	char *buffer)
+static int rd_io_high(struct rd_store *store, enum rd_op op, uint64_t idx,
+		      const char *data, char *buffer)
 {
 	int ret = -1;
 
@@ -347,8 +335,7 @@ int rd_get_stats(struct rd_store *store, struct rd_stats_snapshot *out)
 	if (unlikely(!store))
 		return -EINVAL;
 
-	out->raw_blocks_count =
-		atomic64_read(&store->stats.raw_blocks_count);
+	out->raw_blocks_count = atomic64_read(&store->stats.raw_blocks_count);
 	out->zeroed_blocks_count =
 		atomic64_read(&store->stats.zeroed_blocks_count);
 	out->compressed_blocks_count =
