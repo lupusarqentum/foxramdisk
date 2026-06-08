@@ -53,12 +53,8 @@ static void *rd_deflate_create(size_t max_data_to_compress_size)
 		goto error;
 	}
 
-	ret = zlib_deflateInit2(&ctx->cctx,
-		Z_BEST_COMPRESSION,
-		Z_DEFLATED,
-		wbits,
-		memlevel,
-		Z_DEFAULT_STRATEGY);
+	ret = zlib_deflateInit2(&ctx->cctx, Z_BEST_COMPRESSION, Z_DEFLATED,
+				wbits, memlevel, Z_DEFAULT_STRATEGY);
 	if (ret != Z_OK) {
 		ret = -EINVAL;
 		goto error;
@@ -84,11 +80,8 @@ error:
 	return ERR_PTR(ret);
 }
 
-static ssize_t rd_deflate_compress(void *private_data,
-	const char *src,
-	size_t slen,
-	char *dst,
-	size_t dlen)
+static ssize_t rd_deflate_compress(void *private_data, const char *src,
+				   size_t slen, char *dst, size_t dlen)
 {
 	int ret;
 	struct rd_deflate_ctx *ctx = private_data;
@@ -109,11 +102,8 @@ static ssize_t rd_deflate_compress(void *private_data,
 	return (ssize_t)deflate->total_out;
 }
 
-static ssize_t rd_deflate_decompress(void *private_data,
-	const char *src,
-	size_t slen,
-	char *dst,
-	size_t dlen)
+static ssize_t rd_deflate_decompress(void *private_data, const char *src,
+				     size_t slen, char *dst, size_t dlen)
 {
 	int ret;
 	struct rd_deflate_ctx *ctx = private_data;
@@ -134,9 +124,8 @@ static ssize_t rd_deflate_decompress(void *private_data,
 	return (ssize_t)inflate->total_in;
 }
 
-const struct rd_comp_ops rd_deflate_ops = {
-	.create = rd_deflate_create,
-	.del = rd_deflate_del,
-	.compress = rd_deflate_compress,
-	.decompress = rd_deflate_decompress
-};
+const struct rd_comp_ops rd_deflate_ops = { .create = rd_deflate_create,
+					    .del = rd_deflate_del,
+					    .compress = rd_deflate_compress,
+					    .decompress =
+						    rd_deflate_decompress };

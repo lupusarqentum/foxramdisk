@@ -42,19 +42,16 @@ struct ramdisk_dev {
 	bool initialized;
 };
 
-
 #define RAMDISK_MAX_DEVICES_COUNT 64
 static struct ramdisk_dev devices[RAMDISK_MAX_DEVICES_COUNT];
 static uint32_t devices_added;
 static DEFINE_MUTEX(device_add_mutex);
 
 static ssize_t ramdisk_rd_stats_show(struct device *dev,
-	struct device_attribute *attr,
-	char *buf);
+				     struct device_attribute *attr, char *buf);
 
 static ssize_t ramdisk_stats_show(struct device *dev,
-	struct device_attribute *attr,
-	char *buf);
+				  struct device_attribute *attr, char *buf);
 
 static DEVICE_ATTR(raw_blocks_count, 0444, ramdisk_rd_stats_show, NULL);
 static DEVICE_ATTR(zeroed_blocks_count, 0444, ramdisk_rd_stats_show, NULL);
@@ -107,8 +104,7 @@ static const struct attribute_group *ramdisk_groups[] = {
 };
 
 static ssize_t ramdisk_rd_stats_show(struct device *dev,
-	struct device_attribute *attr,
-	char *buf)
+				     struct device_attribute *attr, char *buf)
 {
 	struct ramdisk_dev *rd_dev = dev_to_disk(dev)->private_data;
 	struct rd_stats_snapshot stats_snapshot;
@@ -133,8 +129,7 @@ static ssize_t ramdisk_rd_stats_show(struct device *dev,
 }
 
 static ssize_t ramdisk_stats_show(struct device *dev,
-	struct device_attribute *attr,
-	char *buf)
+				  struct device_attribute *attr, char *buf)
 {
 	struct ramdisk_dev *rd_dev = dev_to_disk(dev)->private_data;
 	uint64_t stat;
@@ -193,7 +188,8 @@ static void ramdisk_read(struct bio *bio, struct ramdisk_dev *dev)
 					pr_err("read error %d\n", err_code);
 					goto read_fail;
 				}
-				atomic64_add(RD_BLOCK_SIZE, &dev->total_bytes_read);
+				atomic64_add(RD_BLOCK_SIZE,
+					     &dev->total_bytes_read);
 			}
 			memcpy(data + offset, buf + buf_pos, buf_left_bytes);
 			len -= buf_left_bytes;
@@ -209,7 +205,8 @@ static void ramdisk_read(struct bio *bio, struct ramdisk_dev *dev)
 					pr_err("read error %d\n", err_code);
 					goto read_fail;
 				}
-				atomic64_add(RD_BLOCK_SIZE, &dev->total_bytes_read);
+				atomic64_add(RD_BLOCK_SIZE,
+					     &dev->total_bytes_read);
 			}
 			memcpy(data + offset, buf + buf_pos, len);
 			buf_pos += len;
@@ -391,7 +388,8 @@ static int ramdisk_add_unsafe(uint64_t capacity, const struct rd_comp_ops *comp)
 	buf = gd->disk_name;
 	size = DISK_NAME_LEN;
 
-	if (snprintf(buf, size, "%s%d", DEV_FILE_NAME_PREFIX, device_index) >= size) {
+	if (snprintf(buf, size, "%s%d", DEV_FILE_NAME_PREFIX, device_index) >=
+	    size) {
 		pr_err("formatted disk name would be too long\n");
 		return_code = -EINVAL;
 		goto disk_name_formatting_error;
@@ -444,7 +442,7 @@ static void ramdisk_delete(uint32_t device_index)
 }
 
 static ssize_t hot_add_show(const struct class *class,
-	const struct class_attribute *attr, char *buf)
+			    const struct class_attribute *attr, char *buf)
 {
 	int ret = ramdisk_add(default_capacity, default_compression);
 
@@ -465,7 +463,7 @@ static struct attribute *ramdisk_control_class_attrs[] = {
 ATTRIBUTE_GROUPS(ramdisk_control_class);
 
 static const struct class ramdisk_control_class = {
-	.name         = "foxramdisk-control",
+	.name = "foxramdisk-control",
 	.class_groups = ramdisk_control_class_groups,
 };
 
@@ -530,7 +528,8 @@ static int default_compression_get(char *buffer, const struct kernel_param *kp)
 	return ret < max_sz ? ret : -EINVAL;
 }
 
-static int default_compression_set(const char *val, const struct kernel_param *kp)
+static int default_compression_set(const char *val,
+				   const struct kernel_param *kp)
 {
 	const struct rd_comp_ops *ops = rd_lookup_comp(val);
 
@@ -548,15 +547,15 @@ static const struct kernel_param_ops default_compression_ops = {
 
 module_param(initial_devices_count, uint, 0444);
 MODULE_PARM_DESC(initial_devices_count,
-	"Number of ramdisk devices created at module load");
+		 "Number of ramdisk devices created at module load");
 
 module_param(default_capacity, ulong, 0644);
 MODULE_PARM_DESC(default_capacity,
-	"Default capacity (in blocks) for all new devices");
+		 "Default capacity (in blocks) for all new devices");
 
 module_param_cb(default_compression, &default_compression_ops, NULL, 0644);
 MODULE_PARM_DESC(default_compression,
-	"Default compression for all new devices");
+		 "Default compression for all new devices");
 
 module_init(ramdisk_init);
 module_exit(ramdisk_exit);

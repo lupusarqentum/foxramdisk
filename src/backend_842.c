@@ -22,11 +22,8 @@ static void rd_842_del(void *private_data)
 	kfree(private_data);
 }
 
-static ssize_t rd_842_compress(void *private_data,
-	const char *src,
-	size_t slen,
-	char *dst,
-	size_t dlen)
+static ssize_t rd_842_compress(void *private_data, const char *src, size_t slen,
+			       char *dst, size_t dlen)
 {
 	int ret;
 	unsigned int comp_size = dlen;
@@ -37,11 +34,8 @@ static ssize_t rd_842_compress(void *private_data,
 	return ret;
 }
 
-static ssize_t rd_842_decompress(void *private_data,
-	const char *src,
-	size_t slen,
-	char *dst,
-	size_t dlen)
+static ssize_t rd_842_decompress(void *private_data, const char *src,
+				 size_t slen, char *dst, size_t dlen)
 {
 	int ret;
 	unsigned int decomp_size = dlen;
@@ -52,9 +46,7 @@ static ssize_t rd_842_decompress(void *private_data,
 	return ret;
 }
 
-const struct rd_comp_ops rd_842_ops = {
-	.create = rd_842_create,
-	.del = rd_842_del,
-	.compress = rd_842_compress,
-	.decompress = rd_842_decompress
-};
+const struct rd_comp_ops rd_842_ops = { .create = rd_842_create,
+					.del = rd_842_del,
+					.compress = rd_842_compress,
+					.decompress = rd_842_decompress };
