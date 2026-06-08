@@ -4,9 +4,9 @@
 #include <linux/string.h>
 
 #include "ramdisk_compressor.h"
-#include "backend_nocomp.c"
-#include "backend_842.c"
-#include "backend_deflate.c"
+#include "backend_nocomp.h"
+#include "backend_842.h"
+#include "backend_deflate.h"
 
 struct rd_comp_entry {
 	const char *name;

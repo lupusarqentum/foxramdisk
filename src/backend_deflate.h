@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+/* Copyright (C) 2026 Grigoriy Loboda */
+
+#ifndef _BACKEND_DEFLATE_H_
+#define _BACKEND_DEFLATE_H_
+
+#include "ramdisk_compressor.h"
+
+extern const struct rd_comp_ops rd_deflate_ops;
+
+#endif // _BACKEND_DEFLATE_H_
