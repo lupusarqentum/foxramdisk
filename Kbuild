@@ -1,11 +1,10 @@
 ccflags-y := 	-Wall					\
 		-Wextra					\
 		-Wformat				\
+		-Werror					\
 		-O2					\
 		-std=gnu18				\
 		-g					\
-		-Werror=format-security			\
-		-Werror=implicit-function-declaration
 
 obj-m := foxramdisk.o
 
