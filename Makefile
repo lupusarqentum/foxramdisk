@@ -8,6 +8,8 @@ STATIC_ANALYZERS_SOURCES := 	$(wildcard src/*.h) \
 
 CHECKPATCH_PATH := $(LK_SRC_DIR)/scripts/checkpatch.pl
 CHECKPATCH_OPTIONS := --no-tree --ignore=FILE_PATH_CHANGES
+GIT_DIFF := git diff
+GIT_DIFF_OPTIONS := origin/main
 
 CLANG_FORMAT := clang-format
 CLANG_FORMAT_OPTIONS := --Werror
@@ -32,7 +34,7 @@ install:
 
 PHONY += checkpatch
 checkpatch:
-	git diff main | $(CHECKPATCH_PATH) $(CHECKPATCH_OPTIONS)
+	$(GIT_DIFF) $(GIT_DIFF_OPTIONS) | $(CHECKPATCH_PATH) $(CHECKPATCH_OPTIONS)
 
 PHONY += clang-format-check
 clang-format-check:

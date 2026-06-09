@@ -1,0 +1,21 @@
+name: build module and check source code
+
+on: [push, pull_request]
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # we need to run git diff later
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make clang-format
+      - name: Build the project
+        run: make build
+      - name: Check the project source code
+        run: make check
