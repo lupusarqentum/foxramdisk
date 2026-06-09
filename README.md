@@ -1,6 +1,6 @@
-# Linux kernel compressed RAM disk
+# 3-rd party Linux kernel compressed RAM disk module
 
-A C Linux kernel module that provides a block device with RAM-backed storage and compression capabilities to reduce memory efficiency.
+A third-party Linux kernel module written in C to provide a block device with RAM-backed storage and compression capabilities for improving memory efficiency.
 
 This project is implemented mainly for fun and educational purposes. No warranties of correctness or fitness for any particular purpose are given.
 
@@ -13,20 +13,11 @@ This project is implemented mainly for fun and educational purposes. No warranti
 - Per-device statistics via sysfs or convenience script
 - Discard and write-zeroes support to reduce memory usage
 
-## Current Limitations
+## Building the module
 
-Both are planned to be improved.
+The project is expected to be built on **Fedora Server 43** with **Linux kernel 6.18.5-200.fc43.x86_64**. Other distributions and Linux kernel versions are not supported, though they might work as well.
 
-- No runtime device removal
-- Only one I/O operation can happen at a time.
-
-## Building
-
-The project is expected to be built on **Fedora Server** with **Linux kernel 6.18**. Other distributions and Linux kernel versions are out of support, though they might work as well.
-
-The Linux kernel must be configured to support 842 and deflate algorithms (it does by default on Fedora).
-
-To build the project on Fedora Server, you need to install build dependencies:
+To build the project, you need to install build dependencies:
 
 ```bash
 sudo dnf install gcc make kernel-devel kernel-headers
@@ -35,14 +26,39 @@ sudo dnf install gcc make kernel-devel kernel-headers
 After installing dependencies and cloning the repository, simply run make:
 
 ```bash
-make all
+make
 ```
 
-This will produce the module ```.ko``` file that can be loaded.
+This will produce the module ```.ko``` file that can be loaded. Try also:
 
-## Loading the module and creating devices
+```bash
+make help
+```
 
-Simply use ```insmod``` or ```modprobe``` to load the module you have just built. You can pass the following module parameters:
+for additional information.
+
+## Loading the module
+
+Use ```insmod``` or ```modprobe``` to load the module you have built, for example:
+
+```bash
+sudo insmod ./foxramdisk.ko
+```
+
+Alternatively, you can install the module to insert it by its name:
+
+```bash
+sudo make install
+sudo modprobe foxramdisk
+```
+
+Please note that there is no ```uninstall``` target.
+
+If ```modprobe``` fails after successful module installation, try running ```depmod -a``` command.
+
+## Module parameters
+
+. You can pass the following module parameters:
 
 - ```initial_devices_count```: number of devices to create at module load (**uint, optional, defaults to 1**)
 - ```default_capacity```: initial capacity of newly created devices in 4096-bytes long blocks (**ulong, optional, defaults to 4096 blocks (16 MiB)**)
@@ -64,7 +80,9 @@ echo -n "nocomp" > /sys/module/foxramdisk/parameters/default_compression
 
 This would change neither capacity nor compression algorithm of devices already created.
 
-You can hot-add new devices without restarting the module. They will be created with ```default_capacity``` and use ```default_compression```.
+## Creating devices
+
+In addition to devices created at module load, you can hot-add new devices. They will be created with ```default_capacity``` and use ```default_compression``` (see the previous section on how to set these parameters after module has been loaded).
 
 To do that, read from ```hot_add``` file:
 
@@ -78,16 +96,26 @@ If it succeeds at creating a new device, you will successfully read a device num
 
 You can use them like any other block devices, for example, you can format partition tables, filesystems, swaps, or use utilities such as ```dd```.
 
+All data will be stored in RAM, possibly in compressed form.
+
+Probably use cases include:
+
+- swap
+- temporary files
+- maybe more!
+
+## Viewing device usage statistics
+
 The module collects statistics on I/O to devices and their storage representation. You can manually read sysfs files for individual stats. For example, the following command will show total size of compressed blocks:
 
 ```bash
 sudo cat /sys/block/foxramdiskN/storage_stat/compressed_data_size
 ```
 
-Additionally, you can use convenience script ```rd_display_stats.sh``` located in the ```script``` folder of this repository. This script will read all stats for you and format them for easier reading. Run script with no arguments to display its help page:
+Additionally, you can use convenience script ```rd_display_stats.sh``` located in the ```script``` folder of this repository. This script will read all stats for you and format them for easier reading. Run script with no arguments or with a ```--help``` option to display its help page:
 
 ```bash
-./script/rd_display_stats.sh
+./script/rd_display_stats.sh --help
 ```
 
 An example of using the script:
@@ -127,11 +155,9 @@ Currently, there is no way to hot-remove a device. As a workaround, you can disc
 sudo blkdiscard /dev/foxramdiskN
 ```
 
-You can easily unload the module with the help of ```rmmod``` command. All existing devices and their data will be lost.
+You can also unload the module with  the help of ```rmmod``` command. All existing devices and their data will be lost.
 
 ## Planned Updates
-
-If you want to implement any of these, please contact me beforehand. If you have an idea about a new update not listed here, you can open an issue or contact me.
 
 New updates ideas:
 
@@ -140,30 +166,15 @@ New updates ideas:
 - reduce memory footprint of metadata
 - allocate per-CPU compressor contexts to allow concurrent I/O, switch to per-block locks instead of per-device lock
 - support more compression algorithms
-- repository: testing & CI
 
-## How to Contribute
-
-There are multiple ways to help the project.
-
-You can:
-
-- open an issue or contact the developer, if you find a bug
-- send a PR fixing a bug, if you find one
-- write new code for planned updates and send a Pull Request on GitHub. See the next sections for coding conventions and technical information.
-
-## Coding Conventions
-
-Here are conventions used in this project:
-
-- Use [**conventional commit**](https://www.conventionalcommits.org/) messages.
-- Write your code with Linux kernel coding style in mind. All code in this repository is checked for code style violations by kernel **```checkpatch.pl```** script. It would be nice to check your code as well.
-- Ensure your code **builds and runs** as expected.
-- Write kernel-doc comments for all public functions. These comments should be consumable by kernel doc tools. For functions, you should document invariants, argument boundaries, **thread safety, and whether or not a function may sleep**.
+TODO: add static analyzers to CI
+TODO: add testing to CI (already in slow progress locally)
 
 ## Testing & CI
 
-CI and testing infrastructure are planned, but not yet implemented.
+There are make targets to run clang-format to check or fix sources. There is a make target to run checkpatch on git diff as well. Please, see the ```make help``` page to view exact target names.
+
+clang-format and checkpatch stylechecks are run in CI on pushes and pull requests. Additionally, CI checks that the source is buildable.
 
 ## Project Architecture & Documentation
 
@@ -175,9 +186,9 @@ The code is split across different files.
 - ```src/ramdisk.c``` is responsible for all communication with the Linux kernel API, such as module parameters, sysfs entries, disk registration, etc. It also receives I/O requests, processes them and calls ```ramdisk_store.h``` to complete them.
 - ```src/ramdisk_compressor.h``` and ```src/ramdisk_compressor.c``` provide a unified interface of compression algorithms for ```ramdisk_store```, as well as a registry to find these compressors by their name.
 
-A few important notes:
+Notes:
 
-- For every supported compression algorithm, there is corresponding ```.c``` file that is included by ```ramdisk_compressor.c```.
+- For every supported compression algorithm, there are corresponding ```.c``` and ```.h``` files..
 - If compression is not desired, there is a ```"nocomp"``` compression algorithm. For every compress call it returns an error indicating the block is incompressible, effectively forcing the storage to store data uncompressed.
 - ```ramdisk_store``` implementation: all I/O requests (function calls read, write, write zeroes/discard) are passed to ```rd_io_high``` function. This function will switch on the operation code and call one of the "low" functions: ```rd_write_low```, ```rd_read_low```, or ```rd_write_zeroes_low```. "low" functions focus on I/O logic only, they don't do user arguments validation, mutual exclusion, and statistics update. ```rd_io_high``` function can be thought as a decorator that adds this functionality to more focused I/O functions.
 - Each block is represented by a ```struct rd_block``` that holds pointer to the data buffer (if applicable), the data buffer size and *state*.
