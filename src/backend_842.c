@@ -3,6 +3,7 @@
 
 #include <linux/err.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 #include <linux/sw842.h>
 
 #include "backend_842.h"
@@ -10,7 +11,7 @@
 
 static void *rd_842_create(size_t max_data_to_compress_size)
 {
-	void *workmem = kmalloc(SW842_MEM_COMPRESS, GFP_KERNEL);
+	void *workmem = vmalloc(SW842_MEM_COMPRESS);
 
 	if (!workmem)
 		return ERR_PTR(-ENOMEM);
@@ -19,7 +20,7 @@ static void *rd_842_create(size_t max_data_to_compress_size)
 
 static void rd_842_del(void *private_data)
 {
-	kfree(private_data);
+	vfree(private_data);
 }
 
 static ssize_t rd_842_compress(void *private_data, const char *src, size_t slen,
