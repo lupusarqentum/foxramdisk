@@ -1,12 +1,16 @@
 ccflags-y := 	-Wall					\
 		-Wextra					\
-		-Wformat					\
+		-Wformat				\
+		-Werror					\
 		-O2					\
 		-std=gnu18				\
 		-g					\
-		-Werror=format-security			\
-		-Werror=implicit-function-declaration
 
-obj-m := hworld.o
+obj-m := foxramdisk.o
 
-hworld-y := src/main.o
+foxramdisk-y := src/ramdisk.o 			\
+		src/ramdisk_store.o 		\
+		src/ramdisk_compressor.o	\
+		src/backend_nocomp.o		\
+		src/backend_deflate.o		\
+		src/backend_842.o		\
